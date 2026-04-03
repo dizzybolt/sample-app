@@ -47,7 +47,8 @@ const supabase = createClient()
 export function SampleForm({ sample, colorCodes, onSuccess, onCancel }: SampleFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   // Form state
   const [chinaCode, setChinaCode] = useState(
@@ -81,9 +82,12 @@ export function SampleForm({ sample, colorCodes, onSuccess, onCancel }: SampleFo
     setImageFile(null)
     setImagePreview(null)
     setImageUrl('')
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    if (cameraInputRef.current) {
+  cameraInputRef.current.value = ''
+}
+if (galleryInputRef.current) {
+  galleryInputRef.current.value = ''
+}
   }
 
   const uploadImageAndCreateSample = async () => {
@@ -182,45 +186,66 @@ const handleSubmit = async (e: React.FormEvent) => {
       <div className="space-y-2">
         <Label>샘플 이미지</Label>
         <div className="flex items-start gap-4">
-          {imagePreview ? (
-            <div className="relative">
-              <div className="relative h-24 w-24 overflow-hidden rounded-lg border">
-                <Image
-                  src={imagePreview}
-                  alt="Preview"
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="icon"
-                className="absolute -right-2 -top-2 h-6 w-6"
-                onClick={removeImage}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-            >
-              <Upload className="h-6 w-6" />
-              <span className="text-xs">업로드</span>
-            </button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageChange}
-            className="hidden"
-          />
-        </div>
+  {imagePreview ? (
+    <div className="relative">
+      <div className="relative h-24 w-24 overflow-hidden rounded-lg border">
+        <Image
+          src={imagePreview}
+          alt="Preview"
+          fill
+          className="object-cover"
+        />
       </div>
+
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon"
+        className="absolute -right-2 -top-2 h-6 w-6"
+        onClick={removeImage}
+      >
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  ) : (
+    <div className="flex gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => cameraInputRef.current?.click()}
+      >
+        📷 사진 촬영
+      </Button>
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => galleryInputRef.current?.click()}
+      >
+        🖼 앨범 선택
+      </Button>
+    </div>
+  )}
+
+  {/* 카메라 */}
+  <input
+    ref={cameraInputRef}
+    type="file"
+    accept="image/*"
+    capture="environment"
+    onChange={handleImageChange}
+    className="hidden"
+  />
+
+  {/* 앨범 */}
+  <input
+    ref={galleryInputRef}
+    type="file"
+    accept="image/*"
+    onChange={handleImageChange}
+    className="hidden"
+  />
+</div>
 
       {/* China Code (Required) */}
       <div className="space-y-2">
