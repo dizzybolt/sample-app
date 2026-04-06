@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry, ColorCode } from '@/lib/types'
+import type { SampleEntry } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -26,6 +26,12 @@ import { Calendar as CalendarIcon, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
+
+interface ColorCode {
+  id: number
+  color_code: string
+  color_name: string
+}
 
 interface SampleFormProps {
   sample?: SampleEntry | null
@@ -77,13 +83,22 @@ export function SampleForm({
   const [checkedAt, setCheckedAt] = useState<Date | undefined>(
     sample?.checked_at ? new Date(sample.checked_at) : new Date()
   )
-  const [status, setStatus] = useState(sample?.status || '확인')
+  const [status, setStatus] = useState<
+    '확인' | '진행' | '미진행' | '발주'
+  >((sample?.status as '확인' | '진행' | '미진행' | '발주') ?? '확인')
   const [memo, setMemo] = useState(sampleNote)
   const [imageUrl, setImageUrl] = useState(sample?.image_url || '')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(
     sample?.image_url || null
   )
+
+  const [orderQty, setOrderQty] = useState(
+  String((sample as any)?.order_qty ?? '')
+)
+  const [orderedAt, setOrderedAt] = useState<Date | undefined>(
+  (sample as any)?.ordered_at ? new Date((sample as any).ordered_at) : undefined
+)
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -192,6 +207,9 @@ export function SampleForm({
           status,
           note: memo.trim() || null,
           image_url: imageUrl || null,
+          order_qty: orderQty ? parseInt(orderQty, 10) : null,
+          ordered_at: orderedAt ? orderedAt.toISOString() : null,
+          confirmed_at: checkedAt ? checkedAt.toISOString() : null,
         }
 
         const { error: updateError } = await supabase
@@ -312,7 +330,7 @@ export function SampleForm({
           id="koreaCode"
           value={koreaCode}
           onChange={(e) => setKoreaCode(e.target.value)}
-          placeholder="예: TEST0403"
+          placeholder="예: A40TS001L1"
         />
       </div>
 
@@ -389,7 +407,12 @@ export function SampleForm({
         <Label>
           상태 <span className="text-destructive">*</span>
         </Label>
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={status}
+          onValueChange={(value) =>
+            setStatus(value as '확인' | '진행' | '미진행' | '발주')
+          }
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -401,6 +424,46 @@ export function SampleForm({
           </SelectContent>
         </Select>
       </div>
+
+<div className="space-y-2">
+  <Label htmlFor="orderQty">발주수량</Label>
+  <Input
+    id="orderQty"
+    type="number"
+    min="0"
+    value={orderQty}
+    onChange={(e) => setOrderQty(e.target.value)}
+    placeholder="발주수량 입력"
+  />
+</div>
+
+<div className="space-y-2">
+  <Label>발주일자</Label>
+  <Popover>
+    <PopoverTrigger asChild>
+      <Button
+        type="button"
+        variant="outline"
+        className={cn(
+          'w-full justify-start text-left font-normal',
+          !orderedAt && 'text-muted-foreground'
+        )}
+      >
+        <CalendarIcon className="mr-2 h-4 w-4" />
+        {orderedAt ? format(orderedAt, 'PPP', { locale: ko }) : '날짜 선택'}
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-auto p-0" align="start">
+      <Calendar
+        mode="single"
+        selected={orderedAt}
+        onSelect={setOrderedAt}
+        initialFocus
+      />
+    </PopoverContent>
+  </Popover>
+</div>
+
 
       {/* Memo */}
       <div className="space-y-2">

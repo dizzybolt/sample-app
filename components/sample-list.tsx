@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry, ColorCode } from '@/lib/types'
+import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
+interface ColorCode {
+  id: number
+  color_code: string
+  color_name: string
+}
+
 interface SampleListProps {
   initialSamples: SampleEntry[]
   colorCodes: ColorCode[]
@@ -36,9 +42,13 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [colorFilter, setColorFilter] = useState<string>('all')
+  const [dateFilterType, setDateFilterType] = useState<string>('all')
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingSample, setEditingSample] = useState<SampleEntry | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
 
   const refreshSamples = useCallback(async () => {
     setIsLoading(true)
@@ -57,24 +67,54 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
     setIsLoading(false)
   }, [])
 
-  const filteredSamples = useMemo(() => {
-    const keyword = searchTerm.trim().toLowerCase()
+const filteredSamples = useMemo(() => {
+  const keyword = searchTerm.trim().toLowerCase()
 
-    return samples.filter((sample) => {
-      const matchesSearch =
-        !keyword ||
-        sample.china_code?.toLowerCase().includes(keyword) ||
-        sample.korea_code?.toLowerCase().includes(keyword)
+  return samples.filter((sample) => {
+    const matchesSearch =
+      !keyword ||
+      sample.china_code?.toLowerCase().includes(keyword) ||
+      sample.korea_code?.toLowerCase().includes(keyword)
 
-      const matchesStatus =
-        statusFilter === 'all' || sample.status === statusFilter
+    const matchesStatus =
+      statusFilter === 'all' || sample.status === statusFilter
 
-      const matchesColor =
-        colorFilter === 'all' || sample.color_code === colorFilter
+    const matchesColor =
+      colorFilter === 'all' || sample.color_code === colorFilter
 
-      return matchesSearch && matchesStatus && matchesColor
-    })
-  }, [samples, searchTerm, statusFilter, colorFilter])
+    let matchesDate = true
+
+    if (dateFilterType !== 'all' && (dateFrom || dateTo)) {
+      const rawDate =
+        dateFilterType === 'checked_at'
+          ? sample.checked_at
+          : dateFilterType === 'confirmed_at'
+          ? sample.confirmed_at
+          : dateFilterType === 'updated_at'
+          ? sample.updated_at
+          : dateFilterType === 'ordered_at'
+          ? sample.ordered_at
+          : null
+
+      if (rawDate) {
+        const itemDate = new Date(rawDate)
+        const fromDate = dateFrom ? new Date(dateFrom) : null
+        const toDate = dateTo ? new Date(dateTo) : null
+
+        if (fromDate && itemDate < fromDate) matchesDate = false
+        if (toDate) {
+          const toEnd = new Date(toDate)
+          toEnd.setHours(23, 59, 59, 999)
+          if (itemDate > toEnd) matchesDate = false
+        }
+      } else {
+        matchesDate = false
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesColor && matchesDate
+  })
+}, [samples, searchTerm, statusFilter, colorFilter, dateFilterType, dateFrom, dateTo])
 
   const statusCounts = useMemo(() => {
     return {
