@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry } from '@/lib/types'
+import type { SampleEntry, ColorCode } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,12 +24,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-interface ColorCode {
-  id: number
-  color_code: string
-  color_name: string
-}
-
 interface SampleListProps {
   initialSamples: SampleEntry[]
   colorCodes: ColorCode[]
@@ -45,10 +39,10 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   const [dateFilterType, setDateFilterType] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
+
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingSample, setEditingSample] = useState<SampleEntry | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-
 
   const refreshSamples = useCallback(async () => {
     setIsLoading(true)
@@ -67,54 +61,55 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
     setIsLoading(false)
   }, [])
 
-const filteredSamples = useMemo(() => {
-  const keyword = searchTerm.trim().toLowerCase()
+  const filteredSamples = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase()
 
-  return samples.filter((sample) => {
-    const matchesSearch =
-      !keyword ||
-      sample.china_code?.toLowerCase().includes(keyword) ||
-      sample.korea_code?.toLowerCase().includes(keyword)
+    return samples.filter((sample) => {
+      const matchesSearch =
+        !keyword ||
+        sample.china_code?.toLowerCase().includes(keyword) ||
+        sample.korea_code?.toLowerCase().includes(keyword)
 
-    const matchesStatus =
-      statusFilter === 'all' || sample.status === statusFilter
+      const matchesStatus =
+        statusFilter === 'all' || sample.status === statusFilter
 
-    const matchesColor =
-      colorFilter === 'all' || sample.color_code === colorFilter
+      const matchesColor =
+        colorFilter === 'all' || sample.color_code === colorFilter
 
-    let matchesDate = true
+      let matchesDate = true
 
-    if (dateFilterType !== 'all' && (dateFrom || dateTo)) {
-      const rawDate =
-        dateFilterType === 'checked_at'
-          ? sample.checked_at
-          : dateFilterType === 'confirmed_at'
-          ? sample.confirmed_at
-          : dateFilterType === 'updated_at'
-          ? sample.updated_at
-          : dateFilterType === 'ordered_at'
-          ? sample.ordered_at
-          : null
+      if (dateFilterType !== 'all' && (dateFrom || dateTo)) {
+        const rawDate =
+          dateFilterType === 'checked_at'
+            ? sample.checked_at
+            : dateFilterType === 'confirmed_at'
+            ? sample.confirmed_at
+            : dateFilterType === 'updated_at'
+            ? sample.updated_at
+            : dateFilterType === 'ordered_at'
+            ? sample.ordered_at
+            : null
 
-      if (rawDate) {
-        const itemDate = new Date(rawDate)
-        const fromDate = dateFrom ? new Date(dateFrom) : null
-        const toDate = dateTo ? new Date(dateTo) : null
+        if (rawDate) {
+          const itemDate = new Date(rawDate)
+          const fromDate = dateFrom ? new Date(dateFrom) : null
+          const toDate = dateTo ? new Date(dateTo) : null
 
-        if (fromDate && itemDate < fromDate) matchesDate = false
-        if (toDate) {
-          const toEnd = new Date(toDate)
-          toEnd.setHours(23, 59, 59, 999)
-          if (itemDate > toEnd) matchesDate = false
+          if (fromDate && itemDate < fromDate) matchesDate = false
+
+          if (toDate) {
+            const toEnd = new Date(toDate)
+            toEnd.setHours(23, 59, 59, 999)
+            if (itemDate > toEnd) matchesDate = false
+          }
+        } else {
+          matchesDate = false
         }
-      } else {
-        matchesDate = false
       }
-    }
 
-    return matchesSearch && matchesStatus && matchesColor && matchesDate
-  })
-}, [samples, searchTerm, statusFilter, colorFilter, dateFilterType, dateFrom, dateTo])
+      return matchesSearch && matchesStatus && matchesColor && matchesDate
+    })
+  }, [samples, searchTerm, statusFilter, colorFilter, dateFilterType, dateFrom, dateTo])
 
   const statusCounts = useMemo(() => {
     return {
@@ -156,6 +151,15 @@ const filteredSamples = useMemo(() => {
     }
   }
 
+  const resetFilters = () => {
+    setStatusFilter('all')
+    setColorFilter('all')
+    setDateFilterType('all')
+    setDateFrom('')
+    setDateTo('')
+    setSearchTerm('')
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -195,14 +199,14 @@ const filteredSamples = useMemo(() => {
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="중국코드 또는 한국코드로 검색..."
+              placeholder="중국품번 또는 한국품번으로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
             />
           </div>
 
-          {/* Filter Row */}
+          {/* Filter Row 1 */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
@@ -237,17 +241,44 @@ const filteredSamples = useMemo(() => {
                 ))}
               </SelectContent>
             </Select>
+          </div>
 
-            {(statusFilter !== 'all' || colorFilter !== 'all' || searchTerm) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setStatusFilter('all')
-                  setColorFilter('all')
-                  setSearchTerm('')
-                }}
-              >
+          {/* Filter Row 2 - Date */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Select value={dateFilterType} onValueChange={setDateFilterType}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="날짜 기준" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">날짜 기준 없음</SelectItem>
+                <SelectItem value="checked_at">검수일</SelectItem>
+                <SelectItem value="confirmed_at">확인일</SelectItem>
+                <SelectItem value="updated_at">수정일</SelectItem>
+                <SelectItem value="ordered_at">발주일자</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-[160px]"
+            />
+
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-[160px]"
+            />
+
+            {(statusFilter !== 'all' ||
+              colorFilter !== 'all' ||
+              dateFilterType !== 'all' ||
+              dateFrom ||
+              dateTo ||
+              searchTerm) && (
+              <Button variant="ghost" size="sm" onClick={resetFilters}>
                 필터 초기화
               </Button>
             )}
@@ -299,23 +330,33 @@ const filteredSamples = useMemo(() => {
               <Package className="h-12 w-12 text-muted-foreground" />
               <h3 className="mt-4 text-lg font-medium">샘플이 없습니다</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                {searchTerm || statusFilter !== 'all' || colorFilter !== 'all'
+                {searchTerm ||
+                statusFilter !== 'all' ||
+                colorFilter !== 'all' ||
+                dateFilterType !== 'all' ||
+                dateFrom ||
+                dateTo
                   ? '검색 조건에 맞는 샘플이 없습니다.'
                   : '새 샘플을 등록해 주세요.'}
               </p>
 
-              {!searchTerm && statusFilter === 'all' && colorFilter === 'all' && (
-                <Button
-                  className="mt-4"
-                  onClick={() => {
-                    setEditingSample(null)
-                    setIsFormOpen(true)
-                  }}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  첫 샘플 등록하기
-                </Button>
-              )}
+              {!searchTerm &&
+                statusFilter === 'all' &&
+                colorFilter === 'all' &&
+                dateFilterType === 'all' &&
+                !dateFrom &&
+                !dateTo && (
+                  <Button
+                    className="mt-4"
+                    onClick={() => {
+                      setEditingSample(null)
+                      setIsFormOpen(true)
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    첫 샘플 등록하기
+                  </Button>
+                )}
             </CardContent>
           </Card>
         ) : (
