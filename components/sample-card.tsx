@@ -52,6 +52,10 @@ export function SampleCard({
   onEdit,
   onDelete,
 }: SampleCardProps) {
+  if (!group || !group.representative) {
+    return null
+  }
+  
   const representative = group.representative
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedItemId, setSelectedItemId] = useState<string>(representative.id)
