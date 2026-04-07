@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry, ColorCode } from '@/lib/types'
+import type { SampleEntry, ColorCode, SampleGroup } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Plus, Package, Filter, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  Search,
+  Plus,
+  Package,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
 import { SampleCard } from '@/components/sample-card'
 import { SampleForm } from '@/components/sample-form'
 import {
@@ -114,6 +121,33 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
     })
   }, [samples, searchTerm, statusFilter, colorFilter, dateFilterType, dateFrom, dateTo])
 
+  const groupedSamples = useMemo<SampleGroup[]>(() => {
+    console.log('groupedSamples:', groupedSamples)
+    const map = new Map<string, SampleEntry[]>()
+
+    for (const item of filteredSamples) {
+      const key = item.china_code || 'NO_CHINA_CODE'
+      if (!map.has(key)) {
+        map.set(key, [])
+      }
+      map.get(key)!.push(item)
+    }
+
+    return Array.from(map.entries()).map(([china_code, items]) => {
+      const sorted = [...items].sort((a, b) => {
+        const aTime = new Date(a.created_at || a.checked_at || 0).getTime()
+        const bTime = new Date(b.created_at || b.checked_at || 0).getTime()
+        return aTime - bTime
+      })
+
+      return {
+        china_code,
+        representative: sorted[0],
+        items: sorted,
+      }
+    })
+  }, [filteredSamples])
+
   const statusCounts = useMemo(() => {
     return {
       all: samples.length,
@@ -176,7 +210,6 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between gap-3">
@@ -187,7 +220,7 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
               <div>
                 <h1 className="text-xl font-semibold">샘플 입고 관리</h1>
                 <p className="text-sm text-muted-foreground">
-                  총 {samples.length}개의 샘플
+                  총 {samples.length}개 / 그룹 {groupedSamples.length}개
                 </p>
               </div>
             </div>
@@ -206,10 +239,8 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
         </div>
       </header>
 
-      {/* Search + Filters */}
       <div className="border-b bg-muted/30">
         <div className="container mx-auto px-4 py-4">
-          {/* Search */}
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -220,7 +251,6 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
             />
           </div>
 
-          {/* Top filter bar */}
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Filter className="h-4 w-4" />
@@ -252,7 +282,6 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
             </Button>
           </div>
 
-          {/* Status badges always visible */}
           <div className="flex flex-wrap gap-2">
             <Badge
               variant={statusFilter === 'all' ? 'default' : 'outline'}
@@ -274,11 +303,9 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
             ))}
           </div>
 
-          {/* Collapsible detailed filters */}
           {showFilters && (
             <div className="mt-4 space-y-3 rounded-lg border bg-background p-3">
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                {/* Color Filter */}
                 <Select value={colorFilter} onValueChange={setColorFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="컬러 선택" />
@@ -293,7 +320,6 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
                   </SelectContent>
                 </Select>
 
-                {/* Date Type */}
                 <Select value={dateFilterType} onValueChange={setDateFilterType}>
                   <SelectTrigger>
                     <SelectValue placeholder="날짜 기준" />
@@ -307,14 +333,12 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
                   </SelectContent>
                 </Select>
 
-                {/* Date From */}
                 <Input
                   type="date"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                 />
 
-                {/* Date To */}
                 <Input
                   type="date"
                   value={dateTo}
@@ -334,7 +358,6 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
         </div>
       </div>
 
-      {/* Sample List */}
       <main className="container mx-auto px-4 py-6">
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -350,7 +373,7 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
               </Card>
             ))}
           </div>
-        ) : filteredSamples.length === 0 ? (
+        ) : groupedSamples.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Package className="h-12 w-12 text-muted-foreground" />
@@ -377,19 +400,17 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredSamples.map((sample) => (
-              <SampleCard
-                key={sample.id}
-                sample={sample}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
+            {groupedSamples.map((group) => (
+              <div key={group.china_code} className="rounded border p-4">
+              <div>china_code: {group.china_code}</div>
+              <div>representative: {group.representative?.id || '없음'}</div>
+              <div>items: {group.items?.length || 0}</div>
+            </div>
             ))}
           </div>
         )}
       </main>
 
-      {/* Form Dialog */}
       <Dialog
         open={isFormOpen}
         onOpenChange={(open) => {

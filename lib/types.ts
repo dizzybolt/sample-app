@@ -39,3 +39,9 @@ export interface ColorCode {
   sort_order?: number | null
   created_at?: string | null
 }
+
+export type SampleGroup = {
+  china_code: string
+  representative: SampleEntry
+  items: SampleEntry[]
+}
