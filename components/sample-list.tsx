@@ -194,42 +194,47 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-                <Package className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold">샘플 입고 관리</h1>
-                <p className="text-sm text-muted-foreground">
-                  총 {samples.length}개 / 그룹 {groupedSamples.length}개
-                </p>
-              </div>
-            </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <div className="flex min-w-0 items-center gap-3">
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary">
+      <Package className="h-5 w-5 text-primary-foreground" />
+    </div>
 
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push('/orders')}
-                size="sm"
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                발주서 생성
-              </Button>
+    <div className="min-w-0">
+      <h1 className="text-2xl font-semibold leading-tight sm:text-xl">
+        샘플 입고 관리
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        총 {samples.length}개 / 그룹 {groupedSamples.length}개
+      </p>
+    </div>
+  </div>
 
-              <Button
-                onClick={() => {
-                  setEditingSample(null)
-                  setIsFormOpen(true)
-                }}
-                size="sm"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                샘플 등록
-              </Button>
-            </div>
-          </div>
+  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+    <Button
+      onClick={() => {
+        setEditingSample(null)
+        setIsFormOpen(true)
+      }}
+      size="sm"
+      className="w-full sm:w-auto"
+    >
+      <Plus className="mr-2 h-4 w-4" />
+      샘플 등록
+    </Button>
+
+        <Button
+      type="button"
+      variant="outline"
+      onClick={() => router.push('/orders')}
+      size="sm"
+      className="w-full sm:w-auto"
+    >
+      <FileText className="mr-2 h-4 w-4" />
+      발주서 생성
+    </Button>
+  </div>
+</div>
         </div>
       </header>
 
