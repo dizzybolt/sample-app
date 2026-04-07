@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { SampleEntry, ColorCode, SampleGroup } from '@/lib/types'
+import { groupSamplesByChinaCode } from '@/lib/order-utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,6 +23,7 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  FileText,
 } from 'lucide-react'
 import { SampleCard } from '@/components/sample-card'
 import { SampleForm } from '@/components/sample-form'
@@ -39,6 +42,8 @@ interface SampleListProps {
 const STATUS_OPTIONS = ['확인', '진행', '미진행', '발주'] as const
 
 export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
+  const router = useRouter()
+
   const [samples, setSamples] = useState<SampleEntry[]>(initialSamples)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -122,29 +127,7 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   }, [samples, searchTerm, statusFilter, colorFilter, dateFilterType, dateFrom, dateTo])
 
   const groupedSamples = useMemo<SampleGroup[]>(() => {
-    const map = new Map<string, SampleEntry[]>()
-
-    for (const item of filteredSamples) {
-      const key = item.china_code || 'NO_CHINA_CODE'
-      if (!map.has(key)) {
-        map.set(key, [])
-      }
-      map.get(key)!.push(item)
-    }
-
-    return Array.from(map.entries()).map(([china_code, items]) => {
-      const sorted = [...items].sort((a, b) => {
-        const aTime = new Date(a.created_at || a.checked_at || 0).getTime()
-        const bTime = new Date(b.created_at || b.checked_at || 0).getTime()
-        return aTime - bTime
-      })
-
-      return {
-        china_code,
-        representative: sorted[0],
-        items: sorted,
-      }
-    })
+    return groupSamplesByChinaCode(filteredSamples)
   }, [filteredSamples])
 
   const statusCounts = useMemo(() => {
@@ -224,16 +207,28 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
               </div>
             </div>
 
-            <Button
-              onClick={() => {
-                setEditingSample(null)
-                setIsFormOpen(true)
-              }}
-              size="sm"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              샘플 등록
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push('/orders')}
+                size="sm"
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                발주서 생성
+              </Button>
+
+              <Button
+                onClick={() => {
+                  setEditingSample(null)
+                  setIsFormOpen(true)
+                }}
+                size="sm"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                샘플 등록
+              </Button>
+            </div>
           </div>
         </div>
       </header>

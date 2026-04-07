@@ -20,6 +20,8 @@ export interface SampleEntry {
   updated_at?: string | null
 
   order_qty?: number | null
+  offline_qty?: number | null
+  size?: string | null
 
   note?: string | null
   memo?: string | null
@@ -39,4 +41,10 @@ export interface SampleGroup {
   china_code: string
   representative: SampleEntry
   items: SampleEntry[]
+}
+
+export interface OrderDateGroup {
+  ordered_date: string
+  items: SampleEntry[]
+  china_codes: string[]
 }
