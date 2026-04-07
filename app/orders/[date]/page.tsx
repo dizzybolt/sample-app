@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { Button } from '@/components/ui/button'
+import { PrintButton } from '@/components/print-button'
 import { formatDateLabel } from '@/lib/order-utils'
 
 function sumQty(online?: number | null, offline?: number | null) {
@@ -62,9 +63,7 @@ export default async function OrderDetailPage({
           <Button asChild variant="outline">
             <Link href="/orders">목록으로</Link>
           </Button>
-          <Button type="button" onClick={() => window.print()}>
-            인쇄
-          </Button>
+          <PrintButton />
         </div>
       </div>
 
