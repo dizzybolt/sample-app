@@ -122,7 +122,6 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   }, [samples, searchTerm, statusFilter, colorFilter, dateFilterType, dateFrom, dateTo])
 
   const groupedSamples = useMemo<SampleGroup[]>(() => {
-    console.log('groupedSamples:', groupedSamples)
     const map = new Map<string, SampleEntry[]>()
 
     for (const item of filteredSamples) {
@@ -401,11 +400,12 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {groupedSamples.map((group) => (
-              <div key={group.china_code} className="rounded border p-4">
-              <div>china_code: {group.china_code}</div>
-              <div>representative: {group.representative?.id || '없음'}</div>
-              <div>items: {group.items?.length || 0}</div>
-            </div>
+              <SampleCard
+                key={group.china_code}
+                group={group}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         )}

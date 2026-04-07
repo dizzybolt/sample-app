@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { Calendar, Pencil, Trash2, Images } from 'lucide-react'
-import type { SampleEntry,SampleGroup } from '@/lib/types'
+import type { SampleEntry, SampleGroup } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -54,14 +54,18 @@ export function SampleCard({
   if (!group || !group.representative) {
     return null
   }
-  
+
   const representative = group.representative
+  const items = group.items || []
+
   const [isDetailOpen, setIsDetailOpen] = useState(false)
-  const [selectedItemId, setSelectedItemId] = useState<string>(representative.id)
+  const [selectedItemId, setSelectedItemId] = useState<string>(
+    representative.id
+  )
 
   const selectedItem = useMemo(() => {
-    return group.items.find((item) => item.id === selectedItemId) || representative
-  }, [group.items, representative, selectedItemId])
+    return items.find((item) => item.id === selectedItemId) || representative
+  }, [items, representative, selectedItemId])
 
   return (
     <>
@@ -112,7 +116,7 @@ export function SampleCard({
             <div className="text-muted-foreground">이미지 수</div>
             <div className="flex items-center gap-1 font-medium">
               <Images className="h-4 w-4 text-muted-foreground" />
-              {group.items.length}개
+              {items.length}개
             </div>
 
             {!!representative.order_qty && (
@@ -137,11 +141,10 @@ export function SampleCard({
             )}
           </div>
 
-          {/* 하단 미니멀 이미지 strip */}
           <div className="border-t pt-3">
             <div className="mb-2 text-xs text-muted-foreground">이미지 모아보기</div>
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {group.items.map((item) => (
+              {items.map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -172,7 +175,6 @@ export function SampleCard({
         </CardContent>
       </Card>
 
-      {/* 그룹 상세 팝업 */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
@@ -197,7 +199,7 @@ export function SampleCard({
               </div>
 
               <div className="flex gap-2 overflow-x-auto pb-1">
-                {group.items.map((item) => (
+                {items.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -227,7 +229,9 @@ export function SampleCard({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm text-muted-foreground">중국품번</div>
-                  <div className="text-lg font-semibold">{selectedItem.china_code || '-'}</div>
+                  <div className="text-lg font-semibold">
+                    {selectedItem.china_code || '-'}
+                  </div>
                 </div>
 
                 <Badge variant={getStatusVariant(selectedItem.status) as any}>
