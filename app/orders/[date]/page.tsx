@@ -3,8 +3,8 @@ import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
-import { Button } from '@/components/ui/button'
 import { formatDateLabel } from '@/lib/order-utils'
+import { Button } from '@/components/ui/button'
 
 function sumQty(online?: number | null, offline?: number | null) {
   return (online || 0) + (offline || 0)
@@ -50,7 +50,7 @@ export default async function OrderDetailPage({
 
   return (
     <main className="container mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">발주서</h1>
           <p className="text-sm text-muted-foreground">
@@ -61,9 +61,6 @@ export default async function OrderDetailPage({
         <div className="flex gap-2">
           <Button asChild variant="outline">
             <Link href="/orders">목록으로</Link>
-          </Button>
-          <Button type="button" onClick={() => window.print()}>
-            인쇄
           </Button>
         </div>
       </div>
@@ -105,22 +102,32 @@ export default async function OrderDetailPage({
                         />
                       </div>
                     ) : (
-                      <span className="text-xs text-muted-foreground">이미지 없음</span>
+                      <span className="text-xs text-muted-foreground">
+                        이미지 없음
+                      </span>
                     )}
                   </div>
                 </td>
 
                 <td className="border px-2 py-2">{row.korea_code || ''}</td>
+
                 <td className="border px-2 py-2"></td>
+
                 <td className="border px-2 py-2">{row.color_name || ''}</td>
+
                 <td className="border px-2 py-2">{row.color_code || ''}</td>
+
                 <td className="border px-2 py-2">{row.size || ''}</td>
+
                 <td className="border px-2 py-2">{row.order_qty || 0}</td>
+
                 <td className="border px-2 py-2">{row.offline_qty || 0}</td>
+
                 <td className="border px-2 py-2">
                   {sumQty(row.order_qty, row.offline_qty)}
                 </td>
-                <td className="border px-2 py-2 whitespace-pre-wrap text-left">
+
+                <td className="border px-2 py-2 whitespace-pre-wrap break-words text-left">
                   {row.note || row.memo || ''}
                 </td>
               </tr>
