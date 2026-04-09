@@ -71,7 +71,7 @@ export function SampleCard({
     <>
       <Card className="overflow-hidden">
         <div
-          className="relative aspect-[4/3] w-full cursor-pointer bg-muted"
+          className="relative aspect-[4/3] w-full cursor-pointer bg-white"
           onClick={() => {
             setSelectedItemId(representative.id)
             setIsDetailOpen(true)
@@ -82,7 +82,7 @@ export function SampleCard({
               src={representative.image_url}
               alt={representative.china_code}
               fill
-              className="object-cover"
+              className="object-contain bg-white"
             />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -183,13 +183,13 @@ export function SampleCard({
 
           <div className="grid gap-6 md:grid-cols-[1.2fr_1fr]">
             <div className="space-y-3">
-              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border bg-muted">
+              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border bg-white">
                 {selectedItem.image_url ? (
                   <Image
                     src={selectedItem.image_url}
                     alt={selectedItem.china_code}
                     fill
-                    className="object-cover"
+                    className="object-contain bg-white"
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

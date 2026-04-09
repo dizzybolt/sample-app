@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/popover'
 import { Calendar as CalendarIcon, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { format } from 'date-fns'
+import { format, set } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import Cropper from 'react-easy-crop'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
@@ -95,17 +95,45 @@ export function SampleForm({
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null)
+  const [cropBoxWidth, setCropBoxWidth] = useState(260)
+  const [cropBoxHeight, setCropBoxHeight] = useState(340)
+  const [isPreparingCrop, setIsPreparingCrop] = useState(false)
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async(e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setRawImageSrc(reader.result as string)
-      setIsCropOpen(true)
+    try {
+      setError(null)
+      setIsPreparingCrop(true)
+
+      const reader = new FileReader()
+
+      reader.onloadend = async() => {
+        const result = reader.result as string
+
+        // 이미지가 완전히 로드된 뒤에만 크롭창 열기
+
+        await createImage(result)
+
+        setRawImageSrc(result)
+        setCrop({ x: 0, y: 0 })
+        setZoom(1)
+        setCroppedAreaPixels(null)
+        setIsCropOpen(true)
+        setIsPreparingCrop(false)
+      }
+
+      reader.onerror = () => {
+        setIsPreparingCrop(false)
+        setError('이미지를 불러오지 못했습니다.')
+      }
+
+      reader.readAsDataURL(file)
+    } catch (err) {
+      setIsPreparingCrop(false)
+      setError(err instanceof Error ? err.message : '이미지 준비 중 오류가 발생했습니다.')
     }
-    reader.readAsDataURL(file)
   }
 
   const onCropComplete = (_croppedArea: any, croppedPixels: any) => {
@@ -445,16 +473,18 @@ const handleCropConfirm = async () => {
                   type="button"
                   variant="outline"
                   onClick={() => cameraInputRef.current?.click()}
+                  disabled={isPreparingCrop}
                 >
-                  📷 사진 촬영
+                  {isPreparingCrop ? '준비 중...' : '📷 사진 촬영'}
                 </Button>
 
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => galleryInputRef.current?.click()}
+                  disabled={isPreparingCrop}
                 >
-                  🖼 앨범 선택
+                  {isPreparingCrop ? '준비 중...' : '🖼 앨범 선택'}
                 </Button>
               </div>
             )}
@@ -707,32 +737,66 @@ const handleCropConfirm = async () => {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="relative h-[400px] w-full overflow-hidden rounded-lg bg-black">
-              {rawImageSrc && (
+            <div className="relative h-[420px] w-full overflow-hidden rounded-lg bg-black">
+              {rawImageSrc ? (
                 <Cropper
                   image={rawImageSrc}
                   crop={crop}
                   zoom={zoom}
-                  aspect={3 / 4}
+                  cropSize={{ width: cropBoxWidth, height: cropBoxHeight }}
                   onCropChange={setCrop}
                   onZoomChange={setZoom}
                   onCropComplete={onCropComplete}
+                  objectFit="contain"
+                  showGrid={true}
                 />
+              ): (
+                <div className="flex h-full items-center justify-center text-smtext white/70">
+                    이미지 불러오는 중...
+                </div>
               )}
             </div>
 
-            <div className="space-y-2">
-              <Label>확대</Label>
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.1}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
+<div className="space-y-3">
+  <div className="space-y-2">
+    <Label>크롭 영역 가로: {cropBoxWidth}px</Label>
+    <input
+      type="range"
+      min={160}
+      max={360}
+      step={10}
+      value={cropBoxWidth}
+      onChange={(e) => setCropBoxWidth(Number(e.target.value))}
+      className="w-full"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label>크롭 영역 세로: {cropBoxHeight}px</Label>
+    <input
+      type="range"
+      min={200}
+      max={460}
+      step={10}
+      value={cropBoxHeight}
+      onChange={(e) => setCropBoxHeight(Number(e.target.value))}
+      className="w-full"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label>확대</Label>
+    <input
+      type="range"
+      min={1}
+      max={3}
+      step={0.1}
+      value={zoom}
+      onChange={(e) => setZoom(Number(e.target.value))}
+      className="w-full"
+    />
+  </div>
+</div>
 
             <div className="flex gap-2">
               <Button
