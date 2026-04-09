@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { PrintButton } from '@/components/print-button'
 import { formatDateLabel } from '@/lib/order-utils'
 
 function sumQty(online?: number | null, offline?: number | null) {
@@ -63,7 +62,9 @@ export default async function OrderDetailPage({
           <Button asChild variant="outline">
             <Link href="/orders">목록으로</Link>
           </Button>
-          <PrintButton />
+          <Button type="button" onClick={() => window.print()}>
+            인쇄
+          </Button>
         </div>
       </div>
 
@@ -93,14 +94,14 @@ export default async function OrderDetailPage({
                 <td className="border px-2 py-2">{row.china_code || ''}</td>
 
                 <td className="border px-2 py-2">
-                  <div className="mx-auto flex h-[120px] w-[120px] items-center justify-center overflow-hidden rounded bg-muted">
+                  <div className="mx-auto flex h-[120px] w-[120px] items-center justify-center overflow-hidden rounded border bg-white">
                     {row.image_url ? (
                       <div className="relative h-full w-full">
                         <Image
                           src={row.image_url}
                           alt={row.china_code || ''}
                           fill
-                          className="object-cover"
+                          className="object-contain bg-white"
                         />
                       </div>
                     ) : (

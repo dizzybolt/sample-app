@@ -2,8 +2,9 @@
 
 import { useRef, useState } from 'react'
 import Image from 'next/image'
+import Cropper from 'react-easy-crop'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry, ColorCode } from '@/lib/types'
+import type { SampleEntry, ColorCode, StatusType } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -22,12 +23,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Calendar as CalendarIcon, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { format, set } from 'date-fns'
+import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import Cropper from 'react-easy-crop'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 
 interface SampleFormProps {
   sample?: SampleEntry | null
@@ -44,6 +49,124 @@ function getTodayCode() {
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
   return `${yy}${mm}${dd}-`
+}
+
+const createImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new window.Image()
+    image.addEventListener('load', () => resolve(image))
+    image.addEventListener('error', (error) => reject(error))
+    image.src = url
+  })
+
+const getCroppedImageBlob = async (
+  imageSrc: string,
+  cropPixels: { x: number; y: number; width: number; height: number }
+): Promise<Blob> => {
+  const image = await createImage(imageSrc)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+
+  if (!ctx) {
+    throw new Error('캔버스 생성 실패')
+  }
+
+  canvas.width = cropPixels.width
+  canvas.height = cropPixels.height
+
+  ctx.drawImage(
+    image,
+    cropPixels.x,
+    cropPixels.y,
+    cropPixels.width,
+    cropPixels.height,
+    0,
+    0,
+    cropPixels.width,
+    cropPixels.height
+  )
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('크롭 이미지 생성 실패'))
+        return
+      }
+      resolve(blob)
+    }, 'image/jpeg', 0.95)
+  })
+}
+
+const optimizeImage = (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img')
+    const canvas = document.createElement('canvas')
+    const reader = new FileReader()
+
+    reader.onload = (event) => {
+      img.src = event.target?.result as string
+    }
+
+    img.onload = async () => {
+      const MAX_WIDTH = 1000
+
+      let width = img.width
+      let height = img.height
+
+      // 가로 기준 1000px
+      if (width > MAX_WIDTH) {
+        const ratio = MAX_WIDTH / width
+        width = MAX_WIDTH
+        height = Math.round(height * ratio)
+      }
+
+      canvas.width = width
+      canvas.height = height
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('이미지 처리 실패'))
+        return
+      }
+
+      ctx.drawImage(img, 0, 0, width, height)
+
+      const makeBlob = (quality: number) =>
+        new Promise<Blob | null>((res) => {
+          canvas.toBlob((blob) => res(blob), 'image/jpeg', quality)
+        })
+
+      let blob = await makeBlob(0.8)
+
+      if (!blob) {
+        reject(new Error('이미지 압축 실패'))
+        return
+      }
+
+      // 2MB 초과 시 한 번 더 압축
+      if (blob.size > 2 * 1024 * 1024) {
+        blob = await makeBlob(0.7)
+      }
+
+      if (!blob) {
+        reject(new Error('이미지 압축 실패'))
+        return
+      }
+
+      const optimizedFile = new File(
+        [blob],
+        file.name.replace(/\.\w+$/, '.jpg'),
+        { type: 'image/jpeg' }
+      )
+
+      resolve(optimizedFile)
+    }
+
+    img.onerror = () => reject(new Error('이미지 로드 실패'))
+    reader.onerror = () => reject(new Error('파일 읽기 실패'))
+
+    reader.readAsDataURL(file)
+  })
 }
 
 export function SampleForm({
@@ -75,7 +198,9 @@ export function SampleForm({
   const [confirmedAt, setConfirmedAt] = useState<Date | undefined>(
     sample?.confirmed_at ? new Date(sample.confirmed_at) : undefined
   )
-  const [status, setStatus] = useState(sample?.status || '확인')
+  const [status, setStatus] = useState<StatusType>(
+    (sample?.status as StatusType) || '확인'
+  )
   const [memo, setMemo] = useState(sampleNote)
   const [orderQty, setOrderQty] = useState(
     sample?.order_qty != null ? String(sample.order_qty) : ''
@@ -90,16 +215,24 @@ export function SampleForm({
     sample?.image_url || null
   )
 
+  // crop
   const [rawImageSrc, setRawImageSrc] = useState<string | null>(null)
   const [isCropOpen, setIsCropOpen] = useState(false)
+  const [isPreparingCrop, setIsPreparingCrop] = useState(false)
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null)
   const [cropBoxWidth, setCropBoxWidth] = useState(260)
   const [cropBoxHeight, setCropBoxHeight] = useState(340)
-  const [isPreparingCrop, setIsPreparingCrop] = useState(false)
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<{
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null>(null)
 
-  const handleImageChange = async(e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCameraImageChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -109,11 +242,8 @@ export function SampleForm({
 
       const reader = new FileReader()
 
-      reader.onloadend = async() => {
+      reader.onloadend = async () => {
         const result = reader.result as string
-
-        // 이미지가 완전히 로드된 뒤에만 크롭창 열기
-
         await createImage(result)
 
         setRawImageSrc(result)
@@ -132,160 +262,98 @@ export function SampleForm({
       reader.readAsDataURL(file)
     } catch (err) {
       setIsPreparingCrop(false)
-      setError(err instanceof Error ? err.message : '이미지 준비 중 오류가 발생했습니다.')
+      setError(
+        err instanceof Error ? err.message : '이미지 준비 중 오류가 발생했습니다.'
+      )
     }
   }
 
-  const onCropComplete = (_croppedArea: any, croppedPixels: any) => {
+  const handleGalleryImageChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError(null)
+      setIsPreparingCrop(true)
+
+      const optimizedFile = await optimizeImage(file)
+
+      setImageFile(optimizedFile)
+
+      const previewUrl = URL.createObjectURL(optimizedFile)
+      setImagePreview(previewUrl)
+      setImageUrl('')
+
+      setRawImageSrc(null)
+      setIsCropOpen(false)
+      setCrop({ x: 0, y: 0 })
+      setZoom(1)
+      setCroppedAreaPixels(null)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : '이미지 처리 중 오류가 발생했습니다.'
+      )
+    } finally {
+      setIsPreparingCrop(false)
+    }
+  }
+
+  const onCropComplete = (
+    _croppedArea: unknown,
+    croppedPixels: { x: number; y: number; width: number; height: number }
+  ) => {
     setCroppedAreaPixels(croppedPixels)
   }
 
-  const createImage = (url: string): Promise<HTMLImageElement> =>
-    new Promise((resolve, reject) => {
-      const image = new window.Image()
-      image.addEventListener('load', () => resolve(image))
-      image.addEventListener('error', (error) => reject(error))
-      image.src = url
-    })
-
-  const getCroppedImageBlob = async (imageSrc: string, cropPixels: {x: number; y: number; width: number; height: number}): Promise<Blob> => {
-    const image = await createImage(imageSrc)
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-
-    if (!ctx) {
-      throw new Error('캔버스 생성 실패')
-    }
-
-    canvas.width = cropPixels.width
-    canvas.height = cropPixels.height
-
-    ctx.drawImage(
-      image,
-      cropPixels.x,
-      cropPixels.y,
-      cropPixels.width,
-      cropPixels.height,
-      0,
-      0,
-      cropPixels.width,
-      cropPixels.height
-    )
-
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          reject(new Error('크롭 이미지 생성 실패'))
-          return
-        }
-        resolve(blob)
-      }, 'image/jpeg', 0.95)
-    })
-  }
-  
-const optimizeImage = (file: File): Promise<File> => {
-  return new Promise((resolve, reject) => {
-    const img = document.createElement('img')
-    const canvas = document.createElement('canvas')
-    const reader = new FileReader()
-
-    reader.onload = (event) => {
-      img.src = event.target?.result as string
-    }
-
-    img.onload = async () => {
-      const MAX_WIDTH = 1000
-
-      let width = img.width
-      let height = img.height
-
-      if (width > MAX_WIDTH) {
-        const ratio = MAX_WIDTH / width
-        width = MAX_WIDTH
-        height = Math.round(height * ratio)
+  const handleCropConfirm = async () => {
+    try {
+      if (!rawImageSrc || !croppedAreaPixels) {
+        throw new Error('크롭 영역이 없습니다.')
       }
 
-      canvas.width = width
-      canvas.height = height
+      const croppedBlob = await getCroppedImageBlob(rawImageSrc, croppedAreaPixels)
 
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('이미지 처리 실패'))
-        return
-      }
+      const croppedFile = new File([croppedBlob], `cropped_${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+      })
 
-      ctx.drawImage(img, 0, 0, width, height)
+      const optimizedFile = await optimizeImage(croppedFile)
 
-      const makeBlob = (quality: number) =>
-        new Promise<Blob | null>((res) => {
-          canvas.toBlob((blob) => res(blob), 'image/jpeg', quality)
-        })
+      setImageFile(optimizedFile)
 
-      let blob = await makeBlob(0.8)
+      const previewUrl = URL.createObjectURL(optimizedFile)
+      setImagePreview(previewUrl)
+      setImageUrl('')
 
-      if (!blob) {
-        reject(new Error('이미지 압축 실패'))
-        return
-      }
-
-      if (blob.size > 2 * 1024 * 1024) {
-        blob = await makeBlob(0.7)
-      }
-
-      if (!blob) {
-        reject(new Error('이미지 압축 실패'))
-        return
-      }
-
-      const optimizedFile = new File(
-        [blob],
-        file.name.replace(/\.\w+$/, '.jpg'),
-        { type: 'image/jpeg' }
+      setIsCropOpen(false)
+      setRawImageSrc(null)
+      setCrop({ x: 0, y: 0 })
+      setZoom(1)
+      setCroppedAreaPixels(null)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : '이미지 처리 중 오류가 발생했습니다.'
       )
-
-      resolve(optimizedFile)
     }
-
-    img.onerror = () => reject(new Error('이미지 로드 실패'))
-    reader.onerror = () => reject(new Error('파일 읽기 실패'))
-
-    reader.readAsDataURL(file)
-  })
-}
-
-const handleCropConfirm = async () => {
-  try {
-    if (!rawImageSrc || !croppedAreaPixels) {
-      throw new Error('크롭 영역이 없습니다.')
-    }
-
-    const croppedBlob = await getCroppedImageBlob(rawImageSrc, croppedAreaPixels)
-
-    const croppedFile = new File([croppedBlob], `cropped_${Date.now()}.jpg`, {
-      type: 'image/jpeg',
-    })
-
-    const optimizedFile = await optimizeImage(croppedFile)
-
-    setImageFile(optimizedFile)
-
-    const previewUrl = URL.createObjectURL(optimizedFile)
-    setImagePreview(previewUrl)
-    setImageUrl('')
-
-    setIsCropOpen(false)
-    setRawImageSrc(null)
-    setCrop({ x: 0, y: 0 })
-    setZoom(1)
-  } catch (err) {
-    setError(err instanceof Error ? err.message : '이미지 처리 중 오류가 발생했습니다.')
   }
-}
 
   const removeImage = () => {
     setImageFile(null)
     setImagePreview(null)
     setImageUrl('')
+    setRawImageSrc(null)
+    setIsCropOpen(false)
+    setIsPreparingCrop(false)
+    setCrop({ x: 0, y: 0 })
+    setZoom(1)
+    setCroppedAreaPixels(null)
+
     if (cameraInputRef.current) {
       cameraInputRef.current.value = ''
     }
@@ -312,26 +380,45 @@ const handleCropConfirm = async () => {
     formData.append('qty', String(parseInt(quantity, 10) || 1))
     formData.append('checked_at', checkedAt ? checkedAt.toISOString() : '')
     formData.append('confirmed_at', confirmedAt ? confirmedAt.toISOString() : '')
-    formData.append('order_qty', orderQty ? String(parseInt(orderQty, 10) || 0) : '')
+    formData.append(
+      'order_qty',
+      orderQty ? String(parseInt(orderQty, 10) || 0) : ''
+    )
     formData.append('ordered_at', orderedAt ? orderedAt.toISOString() : '')
     formData.append('note', memo.trim())
     formData.append('status', status)
 
-    const res = await fetch(
-      'https://sample-upload-api.onrender.com/upload-image',
-      {
-        method: 'POST',
-        body: formData,
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
+
+    try {
+      const res = await fetch(
+        'https://sample-upload-api.onrender.com/upload-image',
+        {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        }
+      )
+
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.detail || data.message || '이미지 업로드 실패')
       }
-    )
 
-    const data = await res.json()
-
-    if (!res.ok || !data.success) {
-      throw new Error(data.detail || data.message || '이미지 업로드 실패')
+      return data
+    } catch (fetchError: unknown) {
+      const err = fetchError as { name?: string }
+      if (err?.name === 'AbortError') {
+        throw new Error(
+          '업로드 시간이 너무 오래 걸립니다. 이미지 용량을 줄이거나 다시 시도해주세요.'
+        )
+      }
+      throw fetchError
+    } finally {
+      clearTimeout(timeoutId)
     }
-
-    return data
   }
 
   const resetForNewEntry = () => {
@@ -348,6 +435,12 @@ const handleCropConfirm = async () => {
     setImageUrl('')
     setImageFile(null)
     setImagePreview(null)
+    setRawImageSrc(null)
+    setIsCropOpen(false)
+    setIsPreparingCrop(false)
+    setCrop({ x: 0, y: 0 })
+    setZoom(1)
+    setCroppedAreaPixels(null)
 
     if (cameraInputRef.current) {
       cameraInputRef.current.value = ''
@@ -439,7 +532,6 @@ const handleCropConfirm = async () => {
           </div>
         )}
 
-        {/* Image Upload */}
         <div className="space-y-2">
           <Label>
             샘플 이미지 <span className="text-destructive">*</span>
@@ -448,12 +540,12 @@ const handleCropConfirm = async () => {
           <div className="flex items-start gap-4">
             {imagePreview ? (
               <div className="relative">
-                <div className="relative h-24 w-24 overflow-hidden rounded-lg border">
+                <div className="relative h-24 w-24 overflow-hidden rounded-lg border bg-white">
                   <Image
                     src={imagePreview}
                     alt="Preview"
                     fill
-                    className="object-cover"
+                    className="object-contain"
                   />
                 </div>
 
@@ -494,7 +586,7 @@ const handleCropConfirm = async () => {
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={handleImageChange}
+              onChange={handleCameraImageChange}
               className="hidden"
             />
 
@@ -502,13 +594,12 @@ const handleCropConfirm = async () => {
               ref={galleryInputRef}
               type="file"
               accept="image/*"
-              onChange={handleImageChange}
+              onChange={handleGalleryImageChange}
               className="hidden"
             />
           </div>
         </div>
 
-        {/* China Code */}
         <div className="space-y-2">
           <Label htmlFor="chinaCode">
             중국품번 <span className="text-destructive">*</span>
@@ -522,7 +613,6 @@ const handleCropConfirm = async () => {
           />
         </div>
 
-        {/* Korea Code */}
         <div className="space-y-2">
           <Label htmlFor="koreaCode">한국품번</Label>
           <Input
@@ -533,7 +623,6 @@ const handleCropConfirm = async () => {
           />
         </div>
 
-        {/* Color */}
         <div className="space-y-2">
           <Label>
             색상 <span className="text-destructive">*</span>
@@ -555,7 +644,6 @@ const handleCropConfirm = async () => {
           </Select>
         </div>
 
-        {/* Quantity */}
         <div className="space-y-2">
           <Label htmlFor="quantity">
             입고수량 <span className="text-destructive">*</span>
@@ -569,7 +657,6 @@ const handleCropConfirm = async () => {
           />
         </div>
 
-        {/* Checked At */}
         <div className="space-y-2">
           <Label>
             검수일 <span className="text-destructive">*</span>
@@ -601,7 +688,6 @@ const handleCropConfirm = async () => {
           </Popover>
         </div>
 
-        {/* Confirmed At */}
         <div className="space-y-2">
           <Label>확인일</Label>
           <Popover>
@@ -631,12 +717,14 @@ const handleCropConfirm = async () => {
           </Popover>
         </div>
 
-        {/* Status */}
         <div className="space-y-2">
           <Label>
             상태 <span className="text-destructive">*</span>
           </Label>
-          <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
+          <Select
+            value={status}
+            onValueChange={(value) => setStatus(value as StatusType)}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -649,7 +737,6 @@ const handleCropConfirm = async () => {
           </Select>
         </div>
 
-        {/* Order Qty */}
         <div className="space-y-2">
           <Label htmlFor="orderQty">발주수량</Label>
           <Input
@@ -662,7 +749,6 @@ const handleCropConfirm = async () => {
           />
         </div>
 
-        {/* Ordered At */}
         <div className="space-y-2">
           <Label>발주일자</Label>
           <Popover>
@@ -692,7 +778,6 @@ const handleCropConfirm = async () => {
           </Popover>
         </div>
 
-        {/* Memo */}
         <div className="space-y-2">
           <Label htmlFor="memo">비고</Label>
           <Textarea
@@ -704,7 +789,6 @@ const handleCropConfirm = async () => {
           />
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3">
           <Button
             type="button"
@@ -748,55 +832,55 @@ const handleCropConfirm = async () => {
                   onZoomChange={setZoom}
                   onCropComplete={onCropComplete}
                   objectFit="contain"
-                  showGrid={true}
+                  showGrid
                 />
-              ): (
-                <div className="flex h-full items-center justify-center text-smtext white/70">
-                    이미지 불러오는 중...
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-white/70">
+                  이미지 불러오는 중...
                 </div>
               )}
             </div>
 
-<div className="space-y-3">
-  <div className="space-y-2">
-    <Label>크롭 영역 가로: {cropBoxWidth}px</Label>
-    <input
-      type="range"
-      min={160}
-      max={360}
-      step={10}
-      value={cropBoxWidth}
-      onChange={(e) => setCropBoxWidth(Number(e.target.value))}
-      className="w-full"
-    />
-  </div>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>크롭 영역 가로: {cropBoxWidth}px</Label>
+                <input
+                  type="range"
+                  min={160}
+                  max={360}
+                  step={10}
+                  value={cropBoxWidth}
+                  onChange={(e) => setCropBoxWidth(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
 
-  <div className="space-y-2">
-    <Label>크롭 영역 세로: {cropBoxHeight}px</Label>
-    <input
-      type="range"
-      min={200}
-      max={460}
-      step={10}
-      value={cropBoxHeight}
-      onChange={(e) => setCropBoxHeight(Number(e.target.value))}
-      className="w-full"
-    />
-  </div>
+              <div className="space-y-2">
+                <Label>크롭 영역 세로: {cropBoxHeight}px</Label>
+                <input
+                  type="range"
+                  min={200}
+                  max={460}
+                  step={10}
+                  value={cropBoxHeight}
+                  onChange={(e) => setCropBoxHeight(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
 
-  <div className="space-y-2">
-    <Label>확대</Label>
-    <input
-      type="range"
-      min={1}
-      max={3}
-      step={0.1}
-      value={zoom}
-      onChange={(e) => setZoom(Number(e.target.value))}
-      className="w-full"
-    />
-  </div>
-</div>
+              <div className="space-y-2">
+                <Label>확대</Label>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+            </div>
 
             <div className="flex gap-2">
               <Button
@@ -806,6 +890,10 @@ const handleCropConfirm = async () => {
                 onClick={() => {
                   setIsCropOpen(false)
                   setRawImageSrc(null)
+                  setCrop({ x: 0, y: 0 })
+                  setZoom(1)
+                  setCroppedAreaPixels(null)
+                  setIsPreparingCrop(false)
                 }}
               >
                 취소
