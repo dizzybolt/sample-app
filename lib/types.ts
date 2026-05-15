@@ -21,6 +21,7 @@ export type InboundStatus =
 export type ItemCardStatus =
   | '촬영대기'
   | '촬영중'
+  | '작업대기'
   | '작업중'
   | '작업완료'
 

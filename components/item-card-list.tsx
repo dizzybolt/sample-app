@@ -1,14 +1,15 @@
 'use client'
 
+import Image from 'next/image'
 import { useMemo, useState } from 'react'
-import { Search, CheckCircle2 } from 'lucide-react'
+import { Search, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ColorCode, ItemCardStatus, SampleEntry } from '@/lib/types'
 import { groupSamplesByChinaCode } from '@/lib/order-utils'
-import { SampleCard } from '@/components/sample-card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -16,28 +17,47 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
 
 interface ItemCardListProps {
   initialSamples: SampleEntry[]
   colorCodes: ColorCode[]
 }
 
-const ITEM_CARD_STATUS_OPTIONS: ItemCardStatus[] = [
+type UserActionStatus = '촬영중' | '촬영완료' | '작업중' | '작업완료'
+
+const FILTER_STATUS_OPTIONS: Array<ItemCardStatus | '촬영완료'> = [
   '촬영대기',
   '촬영중',
+  '촬영완료',
+  '작업대기',
+  '작업중',
+  '작업완료',
+]
+
+const ACTION_STATUS_OPTIONS: UserActionStatus[] = [
+  '촬영중',
+  '촬영완료',
   '작업중',
   '작업완료',
 ]
 
 function getToday() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '-'
+  return value.slice(0, 10)
+}
+
+function formatPrice(value?: number | null) {
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+function displayPrice(value?: number | null) {
+  if (value === null || value === undefined) return '-'
+  return `${Number(value).toLocaleString()}원`
 }
 
 function getGroupStatus(items: SampleEntry[]) {
@@ -51,33 +71,38 @@ function getGroupStatus(items: SampleEntry[]) {
   return '혼합'
 }
 
+function getRepresentativeColor(sample: SampleEntry) {
+  if (sample.color_name && sample.color_code) {
+    return `${sample.color_name} (${sample.color_code})`
+  }
+
+  return sample.color_name || sample.color_code || '-'
+}
+
 export function ItemCardList({ initialSamples }: ItemCardListProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [savingChinaCode, setSavingChinaCode] = useState<string | null>(null)
-  const [editingSample, setEditingSample] = useState<SampleEntry | null>(null)
-  const [koreaCode, setKoreaCode] = useState('')
-  const [productName, setProductName] = useState('')
-  const [salePrice, setSalePrice] = useState('')
-  const [tagPrice, setTagPrice] = useState('')
-  const [costPrice, setCostPrice] = useState('')
 
   const filteredSamples = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase()
 
     return samples.filter((sample) => {
-      const itemStatus = sample.item_card_status
+      const itemStatus = sample.item_card_status || '촬영대기'
 
       const matchesSearch =
         !keyword ||
         sample.china_code?.toLowerCase().includes(keyword) ||
         sample.korea_code?.toLowerCase().includes(keyword) ||
+        sample.product_name?.toLowerCase().includes(keyword) ||
         sample.color_name?.toLowerCase().includes(keyword) ||
         sample.color_code?.toLowerCase().includes(keyword)
 
       const matchesStatus =
-        statusFilter === 'all' || itemStatus === statusFilter
+        statusFilter === 'all' ||
+        itemStatus === statusFilter ||
+        (statusFilter === '촬영완료' && itemStatus === '작업대기')
 
       return matchesSearch && matchesStatus
     })
@@ -87,118 +112,114 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
     return groupSamplesByChinaCode(filteredSamples)
   }, [filteredSamples])
 
-  const handleChangeGroupStatus = async (
+  const handleChangeStatus = async (
     chinaCode: string,
-    items: SampleEntry[],
-    nextStatus: ItemCardStatus
+    ids: string[],
+    actionStatus: UserActionStatus
   ) => {
     setSavingChinaCode(chinaCode)
 
     const supabase = createClient()
     const today = getToday()
 
-    const updatePayload: Partial<SampleEntry> = {
-      item_card_status: nextStatus,
+    const payload: Partial<SampleEntry> = {}
+
+    if (actionStatus === '촬영중') {
+      payload.item_card_status = '촬영중'
+      payload.shoot_requested_at = today
     }
 
-    if (nextStatus === '촬영중') {
-      updatePayload.shoot_requested_at = today
+    if (actionStatus === '촬영완료') {
+      payload.item_card_status = '작업대기'
+      payload.shoot_completed_at = today
     }
 
-    if (nextStatus === '작업중') {
-      updatePayload.work_started_at = today
+    if (actionStatus === '작업중') {
+      payload.item_card_status = '작업중'
+      payload.work_started_at = today
     }
 
-    if (nextStatus === '작업완료') {
-      updatePayload.work_completed_at = today
-      updatePayload.sample_status = '등록대기'
-      updatePayload.status = '등록대기'
+    if (actionStatus === '작업완료') {
+      payload.item_card_status = '작업완료'
+      payload.work_completed_at = today
+      payload.sample_status = '등록대기'
+      payload.status = '등록대기'
     }
-
-    const ids = items.map((item) => item.id)
 
     const { error } = await supabase
       .from('sample_entries')
-      .update(updatePayload)
+      .update(payload)
       .in('id', ids)
 
     if (error) {
       setSavingChinaCode(null)
-      alert('아이템카드 상태 변경에 실패했습니다.')
+      alert('상태 변경에 실패했습니다.')
       return
     }
 
     setSamples((prev) =>
-      prev.map((sample) => {
-        if (!ids.includes(sample.id)) return sample
-
-        return {
-          ...sample,
-          ...updatePayload,
-        }
-      })
+      prev.map((sample) =>
+        ids.includes(sample.id)
+          ? {
+              ...sample,
+              ...payload,
+            }
+          : sample
+      )
     )
 
     setSavingChinaCode(null)
   }
 
-  const handleEdit = (sample: SampleEntry) => {
-    setEditingSample(sample)
-    setKoreaCode(sample.korea_code || '')
-    setProductName(sample.product_name || '')
-    setSalePrice(sample.sale_price ? String(sample.sale_price) : '')
-    setTagPrice(sample.tag_price ? String(sample.tag_price) : '')
-    setCostPrice(sample.cost_price ? String(sample.cost_price) : '')
-  }
-
-  const handleSaveProductInfo = async () => {
-  if (!editingSample) return
-
-  const supabase = createClient()
-
-  const payload = {
-    korea_code: koreaCode.trim() || null,
-    product_name: productName.trim() || null,
-    sale_price: salePrice === '' ? null : Number(salePrice),
-    tag_price: tagPrice === '' ? null : Number(tagPrice),
-    cost_price: costPrice === '' ? null : Number(costPrice),
-  }
-
-  const { error } = await supabase
-    .from('sample_entries')
-    .update(payload)
-    .eq('china_code', editingSample.china_code)
-
-  if (error) {
-    alert('상품정보 저장에 실패했습니다.')
-    return
-  }
-
-  setSamples((prev) =>
-    prev.map((sample) =>
-      sample.china_code === editingSample.china_code
-        ? {
-            ...sample,
-            ...payload,
-          }
-        : sample
-    )
-  )
-
-  setEditingSample(null)
-  alert('상품정보가 저장되었습니다.')
-}
-
-  const handleDelete = async (id: string) => {
-    const ok = window.confirm('이 항목을 삭제하시겠습니까?')
-    if (!ok) return
+  const handleSaveProductInfo = async (
+    chinaCode: string,
+    ids: string[],
+    formData: FormData
+  ) => {
+    setSavingChinaCode(chinaCode)
 
     const supabase = createClient()
-    const { error } = await supabase.from('sample_entries').delete().eq('id', id)
 
-    if (!error) {
-      setSamples((prev) => prev.filter((sample) => sample.id !== id))
+    const payload = {
+      korea_code: String(formData.get('korea_code') || '').trim() || null,
+      product_name: String(formData.get('product_name') || '').trim() || null,
+      sale_price:
+        String(formData.get('sale_price') || '') === ''
+          ? null
+          : Number(formData.get('sale_price')),
+      tag_price:
+        String(formData.get('tag_price') || '') === ''
+          ? null
+          : Number(formData.get('tag_price')),
+      cost_price:
+        String(formData.get('cost_price') || '') === ''
+          ? null
+          : Number(formData.get('cost_price')),
     }
+
+    const { error } = await supabase
+      .from('sample_entries')
+      .update(payload)
+      .in('id', ids)
+
+    if (error) {
+      setSavingChinaCode(null)
+      alert('상품정보 저장에 실패했습니다.')
+      return
+    }
+
+    setSamples((prev) =>
+      prev.map((sample) =>
+        ids.includes(sample.id)
+          ? {
+              ...sample,
+              ...payload,
+            }
+          : sample
+      )
+    )
+
+    setSavingChinaCode(null)
   }
 
   return (
@@ -207,7 +228,7 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
         <section>
           <h1 className="text-2xl font-bold text-gray-900">아이템카드</h1>
           <p className="mt-1 text-sm text-gray-500">
-            진행 상태 샘플의 촬영/작업 상태를 중국품번 기준 카드로 관리합니다.
+            진행 상태 샘플의 촬영/작업 상태와 상품 정보를 관리합니다.
           </p>
         </section>
 
@@ -218,7 +239,7 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="중국품번, 한국품번, 색상 검색"
+                placeholder="중국품번, 한국품번, 상품명, 색상 검색"
                 className="pl-9"
               />
             </div>
@@ -232,7 +253,7 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
                 전체
               </Button>
 
-              {ITEM_CARD_STATUS_OPTIONS.map((status) => (
+              {FILTER_STATUS_OPTIONS.map((status) => (
                 <Button
                   key={status}
                   variant={statusFilter === status ? 'default' : 'outline'}
@@ -256,135 +277,227 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
         ) : (
           <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {groupedSamples.map((group) => {
-              const groupStatus = getGroupStatus(group.items)
+              const representative = group.representative
+              const items = group.items
+              const ids = items.map((item) => item.id)
+              const groupStatus = getGroupStatus(items)
               const isSaving = savingChinaCode === group.china_code
 
+              const uniqueColorCount = new Set(
+                items.map(
+                  (item) => `${item.color_code || ''}-${item.color_name || ''}`
+                )
+              ).size
+
               return (
-                <div key={group.china_code} className="min-w-0 overflow-hidden rounded-2xl bg-white shadow-sm">
-                  <div className="border-b bg-white px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">현재상태</span>
+                <Card
+                  key={group.china_code}
+                  className="overflow-hidden rounded-2xl"
+                >
+                  <CardContent className="space-y-4 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-gray-500">현재상태</p>
                         <Badge variant="outline">{groupStatus}</Badge>
                       </div>
 
-                      <Select
-                        disabled={isSaving}
-                        value={groupStatus === '혼합' ? undefined : groupStatus}
-                        onValueChange={(value) =>
-                          handleChangeGroupStatus(
-                            group.china_code,
-                            group.items,
-                            value as ItemCardStatus
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-9 w-[120px]">
-                          <SelectValue placeholder="상태 변경" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ITEM_CARD_STATUS_OPTIONS.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {status}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="w-36">
+                        <Select
+                          disabled={isSaving}
+                          onValueChange={(value) =>
+                            handleChangeStatus(
+                              group.china_code,
+                              ids,
+                              value as UserActionStatus
+                            )
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="상태 변경" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ACTION_STATUS_OPTIONS.map((status) => (
+                              <SelectItem key={status} value={status}>
+                                {status}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  </div>
 
-                  <SampleCard
-                    group={group}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                </div>
+                    <div className="relative aspect-[5/3] overflow-hidden rounded-2xl bg-gray-50">
+                      {representative.image_url ? (
+                        <Image
+                          src={representative.image_url}
+                          alt={representative.china_code}
+                          fill
+                          className="object-contain p-3"
+                          sizes="420px"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                          이미지 없음
+                        </div>
+                      )}
+                    </div>
+
+                    <form
+                      className="space-y-3"
+                      action={(formData) =>
+                        handleSaveProductInfo(group.china_code, ids, formData)
+                      }
+                    >
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs text-gray-500">중국품번</p>
+                          <p className="truncate font-bold text-gray-900">
+                            {group.china_code || '-'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500">대표컬러</p>
+                          <p className="truncate font-medium">
+                            {getRepresentativeColor(representative)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500">컬러수</p>
+                          <p className="font-medium">{uniqueColorCount}개</p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500">촬영완료일</p>
+                          <p className="font-medium">
+                            {formatDate(representative.shoot_completed_at)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500">작업완료일</p>
+                          <p className="font-medium">
+                            {formatDate(representative.work_completed_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs text-gray-500">한국품번</label>
+                        <Input
+                          name="korea_code"
+                          defaultValue={representative.korea_code || ''}
+                          placeholder="한국품번"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs text-gray-500">상품명</label>
+                        <Input
+                          name="product_name"
+                          defaultValue={representative.product_name || ''}
+                          placeholder="상품명"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-2">
+                          <label className="text-xs text-gray-500">판매가</label>
+                          <Input
+                            name="sale_price"
+                            type="number"
+                            defaultValue={formatPrice(representative.sale_price)}
+                            placeholder="판매가"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs text-gray-500">TAG가</label>
+                          <Input
+                            name="tag_price"
+                            type="number"
+                            defaultValue={formatPrice(representative.tag_price)}
+                            placeholder="TAG가"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs text-gray-500">원가</label>
+                          <Input
+                            name="cost_price"
+                            type="number"
+                            defaultValue={formatPrice(representative.cost_price)}
+                            placeholder="원가"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 rounded-xl bg-gray-50 p-3 text-sm">
+                        <div>
+                          <p className="text-xs text-gray-500">판매가</p>
+                          <p className="font-medium">
+                            {displayPrice(representative.sale_price)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">TAG가</p>
+                          <p className="font-medium">
+                            {displayPrice(representative.tag_price)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">원가</p>
+                          <p className="font-medium">
+                            {displayPrice(representative.cost_price)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="submit"
+                        disabled={isSaving}
+                        className="w-full"
+                      >
+                        <Save className="mr-2 h-4 w-4" />
+                        상품정보 저장
+                      </Button>
+                    </form>
+
+                    <div className="border-t pt-3">
+                      <p className="mb-2 text-sm font-medium text-gray-700">
+                        이미지 모아보기
+                      </p>
+
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-gray-50"
+                          >
+                            {item.image_url ? (
+                              <Image
+                                src={item.image_url}
+                                alt={item.china_code}
+                                fill
+                                className="object-contain p-1"
+                                sizes="48px"
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-[10px] text-gray-400">
+                                없음
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )
             })}
           </section>
         )}
-        <Dialog
-  open={!!editingSample}
-  onOpenChange={(open) => {
-    if (!open) setEditingSample(null)
-  }}
->
-  <DialogContent className="max-w-lg">
-    <DialogHeader>
-      <DialogTitle>아이템카드 상품정보 수정</DialogTitle>
-    </DialogHeader>
-
-    <div className="space-y-4">
-      <div>
-        <p className="text-sm text-gray-500">중국품번</p>
-        <p className="font-semibold">{editingSample?.china_code}</p>
-      </div>
-
-    <div className="space-y-2">
-      <Label>한국품번</Label>
-      <Input
-        value={koreaCode}
-        onChange={(e) => setKoreaCode(e.target.value)}
-        placeholder="한국품번 입력"
-      />
-    </div>
-
-      <div className="space-y-2">
-        <Label>상품명</Label>
-        <Input
-          value={productName}
-          onChange={(e) => setProductName(e.target.value)}
-          placeholder="상품명 입력"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="space-y-2">
-          <Label>판매가</Label>
-          <Input
-            type="number"
-            value={salePrice}
-            onChange={(e) => setSalePrice(e.target.value)}
-            placeholder="판매가"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>TAG가</Label>
-          <Input
-            type="number"
-            value={tagPrice}
-            onChange={(e) => setTagPrice(e.target.value)}
-            placeholder="TAG가"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>원가</Label>
-          <Input
-            type="number"
-            value={costPrice}
-            onChange={(e) => setCostPrice(e.target.value)}
-            placeholder="원가"
-          />
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-2 pt-2">
-        <Button
-          variant="outline"
-          onClick={() => setEditingSample(null)}
-        >
-          취소
-        </Button>
-
-        <Button onClick={handleSaveProductInfo}>
-          저장
-        </Button>
-      </div>
-    </div>
-  </DialogContent>
-</Dialog>
       </div>
     </main>
   )
