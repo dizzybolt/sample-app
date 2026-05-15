@@ -1,5 +1,4 @@
 'use client'
-
 import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -24,6 +23,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Home,
 } from 'lucide-react'
 import { SampleCard } from '@/components/sample-card'
 import { SampleForm } from '@/components/sample-form'
@@ -211,6 +211,17 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   </div>
 
   <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+    
+    <Button
+      onClick={() => router.push('/')}
+      variant="outline"
+      size="sm"
+      className="w-full sm:w-auto"
+    >
+      <Home className="mr-2 h-4 w-4" />
+      메뉴
+    </Button>
+        
     <Button
       onClick={() => {
         setEditingSample(null)

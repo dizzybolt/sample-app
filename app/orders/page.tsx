@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { FileText, Package, Home } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { groupOrdersByDate, formatDateLabel } from '@/lib/order-utils'
@@ -25,18 +26,29 @@ export default async function OrdersPage() {
 
   return (
     <main className="container mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">발주서 생성</h1>
-          <p className="text-sm text-muted-foreground">
-            발주 상태 샘플을 발주일자별로 정리했습니다.
-          </p>
-        </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <div>
+    <h1 className="text-2xl font-bold">발주서 생성</h1>
+    <p className="text-sm text-muted-foreground">
+      발주 상태 샘플을 발주일자별로 정리했습니다.
+    </p>
+  </div>
 
-        <Button asChild variant="outline">
-          <Link href="/">샘플 관리로 돌아가기</Link>
-        </Button>
-      </div>
+  <div className="flex flex-wrap items-center gap-2">
+    <Link href="/">
+      <Button variant="outline" size="sm">
+        <Home className="mr-2 h-4 w-4" />
+        메뉴
+      </Button>
+    </Link>
+
+    <Link href="/samples">
+      <Button variant="outline" size="sm">
+        샘플 리스트
+      </Button>
+    </Link>
+  </div>
+</div>
 
       {grouped.length === 0 ? (
         <Card>
