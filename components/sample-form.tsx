@@ -733,6 +733,7 @@ export function SampleForm({
               <SelectItem value="진행">진행</SelectItem>
               <SelectItem value="미진행">미진행</SelectItem>
               <SelectItem value="발주">발주</SelectItem>
+              <SelectItem value="보류">보류</SelectItem>
             </SelectContent>
           </Select>
         </div>
