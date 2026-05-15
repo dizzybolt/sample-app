@@ -123,3 +123,106 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  aside,
+  header,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .print-header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tbody {
+    display: table-row-group;
+  }
+
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  th,
+  td {
+    border: 1px solid #999 !important;
+    padding: 6px !important;
+    word-break: break-word;
+    white-space: normal !important;
+  }
+
+  img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-image-appendix {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .print-image-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-image-appendix img {
+    object-fit: contain !important;
+  }
+
+  .print-image-appendix .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .print-image-appendix [class*='aspect-square'] {
+    aspect-ratio: 1 / 1;
+    max-height: 55mm;
+  }
+}
