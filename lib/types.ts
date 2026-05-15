@@ -67,6 +67,11 @@ export interface SampleEntry {
 
   inbound_received_qty?: number | null
   inbound_memo?: string | null
+
+  product_name?: string | null
+  sale_price?: number | null
+  tag_price?: number | null
+  cost_price?: number | null
 }
 
 export interface ColorCode {
