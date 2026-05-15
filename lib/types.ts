@@ -14,6 +14,9 @@ export type InboundStatus =
   | '입고대기'
   | '입고완료'
   | '입고지연'
+  | '입고누락'
+  | '부분입고'
+  | '추가입고'
 
 export type ItemCardStatus =
   | '촬영대기'
@@ -61,6 +64,9 @@ export interface SampleEntry {
   note?: string | null
   memo?: string | null
   image_url?: string | null
+
+  inbound_received_qty?: number | null
+  inbound_memo?: string | null
 }
 
 export interface ColorCode {
