@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { SampleList } from '@/components/sample-list'
+import { SampleDateList } from '@/components/sample-date-list'
 import type { SampleEntry, ColorCode } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -43,5 +43,5 @@ export default async function SamplesPage() {
     getColorCodes(),
   ])
 
-  return <SampleList initialSamples={samples} colorCodes={colorCodes} />
+  return <SampleDateList initialSamples={samples} colorCodes={colorCodes} />
 }

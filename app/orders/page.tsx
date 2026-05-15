@@ -1,85 +1,151 @@
 import Link from 'next/link'
-import { FileText, Package, Home } from 'lucide-react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
-import { groupOrdersByDate, formatDateLabel } from '@/lib/order-utils'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
-export default async function OrdersPage() {
+export const dynamic = 'force-dynamic'
+
+async function getOrderSamples(): Promise<SampleEntry[]> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('sample_entries')
     .select('*')
     .not('order_status', 'is', null)
-    .not('ordered_at', 'is', null)
-    .order('ordered_at', { ascending: false })
-    .order('created_at', { ascending: true })
+    .order('order_requested_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
 
   if (error) {
-    throw new Error(error.message)
+    console.error('Error fetching order samples:', error)
+    return []
   }
 
-  const rows = (data || []) as SampleEntry[]
-  const grouped = groupOrdersByDate(rows)
+  return data || []
+}
+
+function getDateKey(sample: SampleEntry) {
+  return (
+    sample.order_requested_at?.slice(0, 10) ||
+    sample.checked_at?.slice(0, 10) ||
+    sample.created_at?.slice(0, 10) ||
+    '날짜없음'
+  )
+}
+
+function groupByDateAndChinaCode(samples: SampleEntry[]) {
+  const dateMap = new Map<string, Map<string, SampleEntry[]>>()
+
+  samples.forEach((sample) => {
+    const dateKey = getDateKey(sample)
+    const chinaCode = sample.china_code || '품번없음'
+
+    if (!dateMap.has(dateKey)) {
+      dateMap.set(dateKey, new Map())
+    }
+
+    const chinaMap = dateMap.get(dateKey)!
+    const current = chinaMap.get(chinaCode) || []
+    current.push(sample)
+    chinaMap.set(chinaCode, current)
+  })
+
+  return Array.from(dateMap.entries()).sort(([a], [b]) => b.localeCompare(a))
+}
+
+export default async function OrdersPage() {
+  const samples = await getOrderSamples()
+  const groupedOrders = groupByDateAndChinaCode(samples)
 
   return (
-    <main className="container mx-auto max-w-5xl px-4 py-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-  <div>
-    <h1 className="text-2xl font-bold">발주서 생성</h1>
-    <p className="text-sm text-muted-foreground">
-      발주 상태 샘플을 발주일자별로 정리했습니다.
-    </p>
-  </div>
+    <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-5">
+        <section>
+          <h1 className="text-2xl font-bold text-gray-900">발주관리</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            발주대기, 발주보류, 발주완료 샘플을 발주요청일과 중국품번 기준으로 확인합니다.
+          </p>
+        </section>
 
-  <div className="flex flex-wrap items-center gap-2">
-    <Link href="/">
-      <Button variant="outline" size="sm">
-        <Home className="mr-2 h-4 w-4" />
-        메뉴
-      </Button>
-    </Link>
+        {groupedOrders.length === 0 ? (
+          <section className="rounded-2xl bg-white p-10 text-center shadow-sm">
+            <p className="font-medium text-gray-900">발주관리 항목이 없습니다.</p>
+            <p className="mt-1 text-sm text-gray-500">
+              샘플관리에서 상태를 진행으로 변경하면 발주관리 항목이 생성됩니다.
+            </p>
+          </section>
+        ) : (
+          <section className="space-y-5">
+            {groupedOrders.map(([date, chinaMap]) => (
+              <div key={date} className="rounded-2xl bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-900">{date}</h2>
+                  <Badge variant="secondary">{chinaMap.size}개 품번</Badge>
+                </div>
 
-    <Link href="/samples">
-      <Button variant="outline" size="sm">
-        샘플 리스트
-      </Button>
-    </Link>
-  </div>
-</div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {Array.from(chinaMap.entries()).map(([chinaCode, items]) => {
+                    const representative = items[0]
+                    const totalQty = items.reduce(
+                      (sum, item) =>
+                        sum + Number(item.order_qty || item.quantity || item.qty || 0),
+                      0
+                    )
 
-      {grouped.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            발주 상태 데이터가 없습니다.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {grouped.map((group) => (
-            <Link key={group.ordered_date} href={`/orders/${group.ordered_date}`}>
-              <Card className="transition hover:bg-muted/30">
-                <CardContent className="flex items-center justify-between gap-4 p-5">
-                  <div>
-                    <div className="text-lg font-semibold">
-                      {formatDateLabel(group.ordered_date)}
-                    </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      품번 {group.china_codes.length}종 / 행 {group.items.length}건
-                    </div>
-                  </div>
+                    const href = `/orders/${date}/${encodeURIComponent(chinaCode)}`
 
-                  <div className="text-sm text-muted-foreground">
-                    발주서 보기
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
+                    return (
+                      <Link key={`${date}-${chinaCode}`} href={href}>
+                        <Card className="h-full transition hover:-translate-y-1 hover:shadow-md">
+                          <CardContent className="flex gap-3 p-3">
+                            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                              {representative.image_url ? (
+                                <Image
+                                  src={representative.image_url}
+                                  alt={chinaCode}
+                                  fill
+                                  className="object-cover"
+                                  sizes="96px"
+                                />
+                              ) : (
+                                <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                                  이미지 없음
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <h3 className="truncate font-semibold text-gray-900">
+                                  {chinaCode}
+                                </h3>
+                                <Badge variant="outline">
+                                  {representative.order_status || '발주대기'}
+                                </Badge>
+                              </div>
+
+                              <p className="mt-1 text-sm text-gray-500">
+                                색상/옵션 {items.length}개
+                              </p>
+                              <p className="mt-1 text-sm text-gray-500">
+                                발주수량 {totalQty}개
+                              </p>
+                              <p className="mt-2 text-xs text-gray-400">
+                                클릭하면 발주서로 이동
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
     </main>
   )
 }

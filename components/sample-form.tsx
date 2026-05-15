@@ -662,7 +662,7 @@ export function SampleForm({
 
         <div className="space-y-2">
           <Label>
-            검수일 <span className="text-destructive">*</span>
+            샘플입고일 <span className="text-destructive">*</span>
           </Label>
           <Popover>
             <PopoverTrigger asChild>
@@ -685,35 +685,6 @@ export function SampleForm({
                 mode="single"
                 selected={checkedAt}
                 onSelect={setCheckedAt}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        <div className="space-y-2">
-          <Label>확인일</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  'w-full justify-start text-left font-normal',
-                  !confirmedAt && 'text-muted-foreground'
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {confirmedAt
-                  ? format(confirmedAt, 'PPP', { locale: ko })
-                  : '날짜 선택'}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={confirmedAt}
-                onSelect={setConfirmedAt}
                 initialFocus
               />
             </PopoverContent>

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { SampleList } from '@/components/sample-list'
-import type { SampleEntry, ColorCode } from '@/lib/types'
+import { ItemCardList } from '@/components/item-card-list'
+import type { ColorCode, SampleEntry } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +10,7 @@ async function getSamples(): Promise<SampleEntry[]> {
   const { data, error } = await supabase
     .from('sample_entries')
     .select('*')
+    .not('item_card_status', 'is', null)
     .order('checked_at', { ascending: false })
     .order('created_at', { ascending: false })
 
@@ -44,5 +45,5 @@ export default async function ItemCardsPage() {
     getColorCodes(),
   ])
 
-  return <SampleList initialSamples={samples} colorCodes={colorCodes} />
+  return <ItemCardList initialSamples={samples} colorCodes={colorCodes} />
 }
