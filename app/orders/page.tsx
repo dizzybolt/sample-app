@@ -12,7 +12,7 @@ export default async function OrdersPage() {
   const { data, error } = await supabase
     .from('sample_entries')
     .select('*')
-    .eq('status', '발주')
+    .not('order_status', 'is', null)
     .not('ordered_at', 'is', null)
     .order('ordered_at', { ascending: false })
     .order('created_at', { ascending: true })

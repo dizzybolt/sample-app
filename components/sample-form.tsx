@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import Image from 'next/image'
 import Cropper from 'react-easy-crop'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry, ColorCode, StatusType } from '@/lib/types'
+import type { SampleEntry, ColorCode, SampleStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -198,8 +198,8 @@ export function SampleForm({
   const [confirmedAt, setConfirmedAt] = useState<Date | undefined>(
     sample?.confirmed_at ? new Date(sample.confirmed_at) : undefined
   )
-  const [status, setStatus] = useState<StatusType>(
-    (sample?.status as StatusType) || '확인'
+  const [status, setStatus] = useState<SampleStatus>(
+    (sample?.sample_status as SampleStatus) || '샘플입고'
   )
   const [memo, setMemo] = useState(sampleNote)
   const [orderQty, setOrderQty] = useState(
@@ -428,7 +428,7 @@ export function SampleForm({
     setQuantity('1')
     setCheckedAt(new Date())
     setConfirmedAt(undefined)
-    setStatus('확인')
+    setStatus('샘플입고')
     setMemo('')
     setOrderQty('')
     setOrderedAt(undefined)
@@ -494,6 +494,9 @@ export function SampleForm({
           checked_at: checkedAt.toISOString(),
           confirmed_at: confirmedAt ? confirmedAt.toISOString() : null,
           status,
+          sample_status: status,
+          order_status: status === '진행' ? sample?.order_status || '발주대기' : null,
+          item_card_status: status === '진행' ? sample?.item_card_status || '촬영대기' : null,
           note: memo.trim() || null,
           order_qty: orderQty ? parseInt(orderQty, 10) || 0 : null,
           ordered_at: orderedAt ? orderedAt.toISOString() : null,
@@ -718,25 +721,27 @@ export function SampleForm({
         </div>
 
         <div className="space-y-2">
-          <Label>
-            상태 <span className="text-destructive">*</span>
-          </Label>
-          <Select
-            value={status}
-            onValueChange={(value) => setStatus(value as StatusType)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="확인">확인</SelectItem>
-              <SelectItem value="진행">진행</SelectItem>
-              <SelectItem value="미진행">미진행</SelectItem>
-              <SelectItem value="발주">발주</SelectItem>
-              <SelectItem value="보류">보류</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+  <Label>
+    상태 <span className="text-destructive">*</span>
+  </Label>
+
+  <Select
+    value={status}
+    onValueChange={(value) => setStatus(value as SampleStatus)}
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="상태 선택" />
+    </SelectTrigger>
+
+    <SelectContent>
+      <SelectItem value="샘플입고">샘플입고</SelectItem>
+      <SelectItem value="미진행">미진행</SelectItem>
+      <SelectItem value="진행">진행</SelectItem>
+      <SelectItem value="보류">보류</SelectItem>
+      <SelectItem value="등록대기">등록대기</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
 
         <div className="space-y-2">
           <Label htmlFor="orderQty">발주수량</Label>

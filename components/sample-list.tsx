@@ -39,7 +39,7 @@ interface SampleListProps {
   colorCodes: ColorCode[]
 }
 
-const STATUS_OPTIONS = ['확인', '진행', '미진행', '발주'] as const
+const STATUS_OPTIONS = ['샘플입고', '미진행', '진행', '보류', '등록대기'] as const
 
 export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   const router = useRouter()
@@ -83,8 +83,10 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
         sample.china_code?.toLowerCase().includes(keyword) ||
         sample.korea_code?.toLowerCase().includes(keyword)
 
-      const matchesStatus =
-        statusFilter === 'all' || sample.status === statusFilter
+      const sampleStatus = sample.sample_status || sample.status
+
+const matchesStatus =
+  statusFilter === 'all' || sampleStatus === statusFilter
 
       const matchesColor =
         colorFilter === 'all' || sample.color_code === colorFilter
@@ -131,14 +133,18 @@ export function SampleList({ initialSamples, colorCodes }: SampleListProps) {
   }, [filteredSamples])
 
   const statusCounts = useMemo(() => {
-    return {
-      all: samples.length,
-      확인: samples.filter((s) => s.status === '확인').length,
-      진행: samples.filter((s) => s.status === '진행').length,
-      미진행: samples.filter((s) => s.status === '미진행').length,
-      발주: samples.filter((s) => s.status === '발주').length,
-    }
-  }, [samples])
+  const getSampleStatus = (sample: SampleEntry) =>
+    sample.sample_status || sample.status
+
+  return {
+    all: samples.length,
+    샘플입고: samples.filter((s) => getSampleStatus(s) === '샘플입고').length,
+    미진행: samples.filter((s) => getSampleStatus(s) === '미진행').length,
+    진행: samples.filter((s) => getSampleStatus(s) === '진행').length,
+    보류: samples.filter((s) => getSampleStatus(s) === '보류').length,
+    등록대기: samples.filter((s) => getSampleStatus(s) === '등록대기').length,
+  }
+}, [samples])
 
   const hasActiveDetailFilters =
     colorFilter !== 'all' ||
