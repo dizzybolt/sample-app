@@ -254,52 +254,43 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
             </p>
           </section>
         ) : (
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {groupedSamples.map((group) => {
               const groupStatus = getGroupStatus(group.items)
               const isSaving = savingChinaCode === group.china_code
 
               return (
-                <div key={group.china_code} className="space-y-2">
-                  <div className="rounded-2xl bg-white p-3 shadow-sm">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs text-gray-500">작업상태</p>
+                <div key={group.china_code} className="min-w-0 overflow-hidden rounded-2xl bg-white shadow-sm">
+                  <div className="border-b bg-white px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">현재상태</span>
                         <Badge variant="outline">{groupStatus}</Badge>
                       </div>
 
-                      {groupStatus === '작업완료' && (
-                        <Badge className="gap-1">
-                          <CheckCircle2 className="h-3 w-3" />
-                          등록대기
-                        </Badge>
-                      )}
+                      <Select
+                        disabled={isSaving}
+                        value={groupStatus === '혼합' ? undefined : groupStatus}
+                        onValueChange={(value) =>
+                          handleChangeGroupStatus(
+                            group.china_code,
+                            group.items,
+                            value as ItemCardStatus
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-9 w-[120px]">
+                          <SelectValue placeholder="상태 변경" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ITEM_CARD_STATUS_OPTIONS.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {status}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-
-                    <Select
-                      disabled={isSaving}
-                      value={
-                        groupStatus === '혼합' ? undefined : groupStatus
-                      }
-                      onValueChange={(value) =>
-                        handleChangeGroupStatus(
-                          group.china_code,
-                          group.items,
-                          value as ItemCardStatus
-                        )
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="상태 변경" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ITEM_CARD_STATUS_OPTIONS.map((status) => (
-                          <SelectItem key={status} value={status}>
-                            {status}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
                   </div>
 
                   <SampleCard
