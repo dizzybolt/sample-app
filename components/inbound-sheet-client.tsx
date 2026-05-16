@@ -3,32 +3,28 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, Save } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { InboundStatus, SampleEntry } from '@/lib/types'
+import type {
+  InboundSizeQuantity,
+  InboundStatus,
+  OrderSizeQuantity,
+  SampleEntry,
+} from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 
 interface InboundSheetClientProps {
   date: string
   chinaCode: string
   initialSamples: SampleEntry[]
+  orderQuantities: OrderSizeQuantity[]
+  initialInboundQuantities: InboundSizeQuantity[]
 }
 
 function getToday() {
   return new Date().toISOString().slice(0, 10)
-}
-
-function getExpectedQty(sample: SampleEntry) {
-  return Number(
-    sample.inbound_expected_qty ||
-      sample.order_qty ||
-      sample.quantity ||
-      sample.qty ||
-      0
-  )
 }
 
 function getAutoInboundStatus(
@@ -45,46 +41,123 @@ export function InboundSheetClient({
   date,
   chinaCode,
   initialSamples,
+  orderQuantities,
+  initialInboundQuantities,
 }: InboundSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
+  const [inboundQuantities, setInboundQuantities] = useState(
+    initialInboundQuantities
+  )
   const [isSaving, setIsSaving] = useState(false)
 
+  const sizeGroupName =
+    samples[0]?.size_group_name ||
+    orderQuantities[0]?.size_group_name ||
+    'FREE'
+
+  const sizeLabels = useMemo(() => {
+    const labels = orderQuantities
+      .filter((item) => item.size_group_name === sizeGroupName)
+      .map((item) => item.size_label)
+
+    return Array.from(new Set(labels))
+  }, [orderQuantities, sizeGroupName])
+
+  const getExpectedQty = (sampleId: string, sizeLabel: string) => {
+    const found = orderQuantities.find(
+      (item) =>
+        item.sample_entry_id === sampleId &&
+        item.size_group_name === sizeGroupName &&
+        item.size_label === sizeLabel
+    )
+
+    return found?.qty || 0
+  }
+
+  const getReceivedQty = (sampleId: string, sizeLabel: string) => {
+    const found = inboundQuantities.find(
+      (item) =>
+        item.sample_entry_id === sampleId &&
+        item.size_group_name === sizeGroupName &&
+        item.size_label === sizeLabel
+    )
+
+    if (found) return found.qty || 0
+
+    return getExpectedQty(sampleId, sizeLabel)
+  }
+
+  const updateReceivedQty = (
+    sample: SampleEntry,
+    sizeLabel: string,
+    value: string
+  ) => {
+    const nextQty = value === '' ? 0 : Number(value)
+
+    setInboundQuantities((prev) => {
+      const exists = prev.find(
+        (item) =>
+          item.sample_entry_id === sample.id &&
+          item.size_group_name === sizeGroupName &&
+          item.size_label === sizeLabel
+      )
+
+      if (exists) {
+        return prev.map((item) =>
+          item.id === exists.id
+            ? {
+                ...item,
+                qty: nextQty,
+              }
+            : item
+        )
+      }
+
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          sample_entry_id: sample.id,
+          inbound_date: date,
+          china_code: sample.china_code,
+          color_code: sample.color_code,
+          size_group_name: sizeGroupName,
+          size_label: sizeLabel,
+          qty: nextQty,
+        },
+      ]
+    })
+  }
+
+  const getExpectedTotal = (sampleId: string) => {
+    return sizeLabels.reduce(
+      (sum, size) => sum + Number(getExpectedQty(sampleId, size) || 0),
+      0
+    )
+  }
+
+  const getReceivedTotal = (sampleId: string) => {
+    return sizeLabels.reduce(
+      (sum, size) => sum + Number(getReceivedQty(sampleId, size) || 0),
+      0
+    )
+  }
+
   const totalExpectedQty = useMemo(() => {
-    return samples.reduce((sum, item) => sum + getExpectedQty(item), 0)
-  }, [samples])
+    return samples.reduce(
+      (sum, sample) => sum + getExpectedTotal(sample.id),
+      0
+    )
+  }, [samples, orderQuantities, sizeLabels])
 
   const totalReceivedQty = useMemo(() => {
     return samples.reduce(
-      (sum, item) =>
-        sum +
-        Number(
-          item.inbound_received_qty ??
-            item.inbound_expected_qty ??
-            item.order_qty ??
-            item.quantity ??
-            item.qty ??
-            0
-        ),
+      (sum, sample) => sum + getReceivedTotal(sample.id),
       0
     )
-  }, [samples])
+  }, [samples, inboundQuantities, sizeLabels])
 
   const representative = samples[0]
-
-  const updateReceivedQty = (id: string, value: string) => {
-    const nextQty = value === '' ? null : Number(value)
-
-    setSamples((prev) =>
-      prev.map((sample) =>
-        sample.id === id
-          ? {
-              ...sample,
-              inbound_received_qty: nextQty,
-            }
-          : sample
-      )
-    )
-  }
 
   const handleSaveQty = async () => {
     setIsSaving(true)
@@ -92,42 +165,67 @@ export function InboundSheetClient({
     const supabase = createClient()
 
     for (const sample of samples) {
-      const expectedQty = getExpectedQty(sample)
-      const receivedQty = Number(
-        sample.inbound_received_qty ?? expectedQty ?? 0
-      )
-      const nextStatus = getAutoInboundStatus(expectedQty, receivedQty)
+      const expectedTotal = getExpectedTotal(sample.id)
+      const receivedTotal = getReceivedTotal(sample.id)
+      const nextStatus = getAutoInboundStatus(expectedTotal, receivedTotal)
 
-      const { error } = await supabase
+      await supabase
+        .from('inbound_size_quantities')
+        .delete()
+        .eq('sample_entry_id', sample.id)
+        .eq('inbound_date', date)
+        .eq('size_group_name', sizeGroupName)
+
+      const rows = sizeLabels.map((size) => ({
+        sample_entry_id: sample.id,
+        inbound_date: date,
+        china_code: sample.china_code,
+        color_code: sample.color_code,
+        size_group_name: sizeGroupName,
+        size_label: size,
+        qty: getReceivedQty(sample.id, size),
+      }))
+
+      if (rows.length > 0) {
+        const { error: insertError } = await supabase
+          .from('inbound_size_quantities')
+          .insert(rows)
+
+        if (insertError) {
+          setIsSaving(false)
+          alert('사이즈별 입고수량 저장에 실패했습니다.')
+          return
+        }
+      }
+
+      const { error: sampleError } = await supabase
         .from('sample_entries')
         .update({
-          inbound_expected_qty: expectedQty,
-          inbound_received_qty: receivedQty,
+          inbound_expected_qty: expectedTotal,
+          inbound_received_qty: receivedTotal,
           inbound_status: nextStatus,
+          size_group_name: sizeGroupName,
         })
         .eq('id', sample.id)
 
-      if (error) {
+      if (sampleError) {
         setIsSaving(false)
-        alert(`입고수량 저장 실패: ${sample.china_code}`)
+        alert('입고수량 합계 저장에 실패했습니다.')
         return
       }
     }
 
     setSamples((prev) =>
-      prev.map((sample) => {
-        const expectedQty = getExpectedQty(sample)
-        const receivedQty = Number(
-          sample.inbound_received_qty ?? expectedQty ?? 0
-        )
-
-        return {
-          ...sample,
-          inbound_expected_qty: expectedQty,
-          inbound_received_qty: receivedQty,
-          inbound_status: getAutoInboundStatus(expectedQty, receivedQty),
-        }
-      })
+      prev.map((sample) => ({
+        ...sample,
+        inbound_expected_qty: getExpectedTotal(sample.id),
+        inbound_received_qty: getReceivedTotal(sample.id),
+        inbound_status: getAutoInboundStatus(
+          getExpectedTotal(sample.id),
+          getReceivedTotal(sample.id)
+        ),
+        size_group_name: sizeGroupName,
+      }))
     )
 
     setIsSaving(false)
@@ -152,7 +250,7 @@ export function InboundSheetClient({
 
       if (error) {
         setIsSaving(false)
-        alert(`입고지연 처리 실패: ${sample.china_code}`)
+        alert('입고지연 처리에 실패했습니다.')
         return
       }
     }
@@ -170,10 +268,12 @@ export function InboundSheetClient({
 
   const handleCompleteInbound = async () => {
     const ok = window.confirm(
-      '입고완료 처리할까요?\n실제입고수량 기준으로 입고완료/부분입고/추가입고/입고누락 상태가 자동 저장됩니다.'
+      '입고완료 처리할까요?\n실제입고수량 기준으로 입고상태가 자동 저장됩니다.'
     )
 
     if (!ok) return
+
+    await handleSaveQty()
 
     setIsSaving(true)
 
@@ -181,44 +281,40 @@ export function InboundSheetClient({
     const today = getToday()
 
     for (const sample of samples) {
-      const expectedQty = getExpectedQty(sample)
-      const receivedQty = Number(
-        sample.inbound_received_qty ?? expectedQty ?? 0
-      )
-      const nextStatus = getAutoInboundStatus(expectedQty, receivedQty)
+      const expectedTotal = getExpectedTotal(sample.id)
+      const receivedTotal = getReceivedTotal(sample.id)
+      const nextStatus = getAutoInboundStatus(expectedTotal, receivedTotal)
 
       const { error } = await supabase
         .from('sample_entries')
         .update({
-          inbound_expected_qty: expectedQty,
-          inbound_received_qty: receivedQty,
+          inbound_expected_qty: expectedTotal,
+          inbound_received_qty: receivedTotal,
           inbound_status: nextStatus,
           inbound_at: today,
+          size_group_name: sizeGroupName,
         })
         .eq('id', sample.id)
 
       if (error) {
         setIsSaving(false)
-        alert(`입고완료 처리 실패: ${sample.china_code}`)
+        alert('입고완료 처리에 실패했습니다.')
         return
       }
     }
 
     setSamples((prev) =>
-      prev.map((sample) => {
-        const expectedQty = getExpectedQty(sample)
-        const receivedQty = Number(
-          sample.inbound_received_qty ?? expectedQty ?? 0
-        )
-
-        return {
-          ...sample,
-          inbound_expected_qty: expectedQty,
-          inbound_received_qty: receivedQty,
-          inbound_status: getAutoInboundStatus(expectedQty, receivedQty),
-          inbound_at: today,
-        }
-      })
+      prev.map((sample) => ({
+        ...sample,
+        inbound_expected_qty: getExpectedTotal(sample.id),
+        inbound_received_qty: getReceivedTotal(sample.id),
+        inbound_status: getAutoInboundStatus(
+          getExpectedTotal(sample.id),
+          getReceivedTotal(sample.id)
+        ),
+        inbound_at: today,
+        size_group_name: sizeGroupName,
+      }))
     )
 
     setIsSaving(false)
@@ -228,11 +324,11 @@ export function InboundSheetClient({
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-5">
-        <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <section className="no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">입고 상세</h1>
             <p className="mt-1 text-sm text-gray-500">
-              중국품번 기준 입고 수량과 입고 상태를 관리합니다.
+              발주서의 사이즈별 수량을 기준으로 실제 입고수량을 관리합니다.
             </p>
           </div>
 
@@ -243,6 +339,11 @@ export function InboundSheetClient({
                 입고관리
               </Button>
             </Link>
+
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="mr-2 h-4 w-4" />
+                프린트
+              </Button>
 
             <Button variant="outline" onClick={handleSaveQty} disabled={isSaving}>
               <Save className="mr-2 h-4 w-4" />
@@ -260,7 +361,7 @@ export function InboundSheetClient({
           </div>
         </section>
 
-        <Card>
+        <Card className="print-break-inside-avoid">
           <CardContent className="space-y-4 p-5">
             <div className="grid gap-3 sm:grid-cols-5">
               <div>
@@ -294,74 +395,75 @@ export function InboundSheetClient({
         </Card>
 
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="p-0 print:p-0">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-sm">
+              <table className="w-full min-w-[850px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-100">
-                    <th className="border px-3 py-2 text-left">중국품번</th>
-                    <th className="border px-3 py-2 text-left">한국품번</th>
-                    <th className="border px-3 py-2 text-left">색상코드</th>
-                    <th className="border px-3 py-2 text-left">색상명</th>
-                    <th className="border px-3 py-2 text-right">발주수량</th>
-                    <th className="border px-3 py-2 text-right">입고예정</th>
-                    <th className="border px-3 py-2 text-right">실제입고</th>
-                    <th className="border px-3 py-2 text-left">상태</th>
+                  <tr className="border-b bg-gray-100 text-center">
+                    <th className="border px-3 py-2">중국품번</th>
+                    <th className="border px-3 py-2">한국품번</th>
+                    <th className="border px-3 py-2">색상코드</th>
+                    <th className="border px-3 py-2">색상명</th>
+
+                    {sizeLabels.map((size) => (
+                      <th key={size} className="border px-2 py-2">
+                        {size}
+                      </th>
+                    ))}
+
+                    <th className="border px-3 py-2">입고합계</th>
+                    <th className="border px-3 py-2">상태</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {samples.map((sample) => {
-                    const expectedQty = getExpectedQty(sample)
-                    const receivedQty =
-                      sample.inbound_received_qty ?? expectedQty
+                  {samples.map((sample) => (
+                    <tr key={sample.id} className="border-b text-center">
+                      <td className="border px-3 py-2">{sample.china_code}</td>
+                      <td className="border px-3 py-2">
+                        {sample.korea_code || '-'}
+                      </td>
+                      <td className="border px-3 py-2">
+                        {sample.color_code || '-'}
+                      </td>
+                      <td className="border px-3 py-2">
+                        {sample.color_name || '-'}
+                      </td>
 
-                    return (
-                      <tr key={sample.id} className="border-b">
-                        <td className="border px-3 py-2">{sample.china_code}</td>
-                        <td className="border px-3 py-2">
-                          {sample.korea_code || '-'}
-                        </td>
-                        <td className="border px-3 py-2">
-                          {sample.color_code || '-'}
-                        </td>
-                        <td className="border px-3 py-2">
-                          {sample.color_name || '-'}
-                        </td>
-                        <td className="border px-3 py-2 text-right">
-                          {sample.order_qty || 0}
-                        </td>
-                        <td className="border px-3 py-2 text-right">
-                          {expectedQty}
-                        </td>
-                        <td className="border px-3 py-2 text-right">
-                          <Input
+                      {sizeLabels.map((size) => (
+                        <td key={size} className="border px-2 py-2">
+                          <input
                             type="number"
                             min={0}
-                            value={receivedQty}
+                            value={getReceivedQty(sample.id, size)}
                             onChange={(e) =>
-                              updateReceivedQty(sample.id, e.target.value)
+                              updateReceivedQty(sample, size, e.target.value)
                             }
-                            className="ml-auto w-24 text-right"
+                            className="mx-auto w-16 rounded-md border px-2 py-1 text-center"
                           />
                         </td>
-                        <td className="border px-3 py-2">
-                          {sample.inbound_status || '입고대기'}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                      ))}
+
+                      <td className="border px-3 py-2 font-semibold">
+                        {getReceivedTotal(sample.id)}
+                      </td>
+
+                      <td className="border px-3 py-2">
+                        {sample.inbound_status || '입고대기'}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
 
                 <tfoot>
                   <tr className="bg-yellow-50 font-semibold">
-                    <td className="border px-3 py-2" colSpan={5}>
+                    <td
+                      className="border px-3 py-2 text-right"
+                      colSpan={4 + sizeLabels.length}
+                    >
                       합계
                     </td>
-                    <td className="border px-3 py-2 text-right">
-                      {totalExpectedQty}
-                    </td>
-                    <td className="border px-3 py-2 text-right">
+                    <td className="border px-3 py-2 text-center">
                       {totalReceivedQty}
                     </td>
                     <td className="border px-3 py-2" />
@@ -372,23 +474,23 @@ export function InboundSheetClient({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="print-image-appendix">
           <CardContent className="space-y-4 p-5">
-            <h2 className="font-semibold text-gray-900">이미지</h2>
+            <h2 className="font-semibold text-gray-900">이미지 별첨</h2>
 
             {samples.length === 0 ? (
               <p className="text-sm text-gray-500">표시할 샘플이 없습니다.</p>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 {samples.map((sample) => (
-                  <div key={sample.id} className="space-y-2">
+                  <div key={sample.id} className="print-image-item space-y-2">
                     <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100">
                       {sample.image_url ? (
                         <Image
                           src={sample.image_url}
                           alt={sample.china_code}
                           fill
-                          className="object-cover"
+                          className="object-contain p-2"
                           sizes="180px"
                         />
                       ) : (

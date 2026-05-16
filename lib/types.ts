@@ -141,3 +141,25 @@ export interface OrderSizeQuantity {
 
   updated_at?: string | null
 }
+
+export interface InboundSizeQuantity {
+  id: string
+
+  sample_entry_id?: string | null
+
+  inbound_date?: string | null
+
+  china_code?: string | null
+
+  color_code?: string | null
+
+  size_group_name?: string | null
+
+  size_label: string
+
+  qty?: number | null
+
+  created_at?: string | null
+
+  updated_at?: string | null
+}
