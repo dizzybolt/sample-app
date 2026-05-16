@@ -10,6 +10,7 @@ import {
   IdCard,
   Menu,
   PackageCheck,
+  Ruler,
   X,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -46,6 +47,11 @@ const navItems = [
     title: '입고관리',
     href: '/inbound',
     icon: PackageCheck,
+  },
+  {
+  title: '사이즈표',
+  href: '/size-groups',
+  icon: Ruler,
   },
 ]
 

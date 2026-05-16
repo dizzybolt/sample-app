@@ -5,16 +5,24 @@ import Image from 'next/image'
 import { useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { SampleEntry } from '@/lib/types'
+import type { OrderSizeQuantity, SampleEntry, SizeGroup } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface OrderSheetClientProps {
   date: string
   chinaCode: string
   initialSamples: SampleEntry[]
+  sizeGroups: SizeGroup[]
+  initialQuantities: OrderSizeQuantity[]
 }
 
 function getToday() {
@@ -25,33 +33,91 @@ export function OrderSheetClient({
   date,
   chinaCode,
   initialSamples,
+  sizeGroups,
+  initialQuantities,
 }: OrderSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
+  const [quantities, setQuantities] =
+    useState<OrderSizeQuantity[]>(initialQuantities)
+  const [selectedSizeGroup, setSelectedSizeGroup] = useState(
+    initialSamples[0]?.size_group_name || sizeGroups[0]?.name || ''
+  )
   const [isSaving, setIsSaving] = useState(false)
 
-  const totalOrderQty = useMemo(() => {
-    return samples.reduce(
-      (sum, item) => sum + Number(item.order_qty || item.quantity || item.qty || 0),
-      0
-    )
-  }, [samples])
+  const selectedGroup = useMemo(() => {
+    return sizeGroups.find((group) => group.name === selectedSizeGroup)
+  }, [sizeGroups, selectedSizeGroup])
+
+  const sizeLabels = selectedGroup?.sizes || []
 
   const representative = samples[0]
 
-  const updateOrderQty = (id: string, value: string) => {
-    const nextQty = value === '' ? null : Number(value)
+  const getQty = (sampleId: string, sizeLabel: string) => {
+    const found = quantities.find(
+      (item) =>
+        item.sample_entry_id === sampleId &&
+        item.size_label === sizeLabel &&
+        item.size_group_name === selectedSizeGroup
+    )
 
-    setSamples((prev) =>
-      prev.map((sample) =>
-        sample.id === id
-          ? {
-              ...sample,
-              order_qty: nextQty,
-            }
-          : sample
+    return found?.qty || 0
+  }
+
+  const updateQty = (
+    sample: SampleEntry,
+    sizeLabel: string,
+    value: string
+  ) => {
+    const nextQty = value === '' ? 0 : Number(value)
+
+    setQuantities((prev) => {
+      const exists = prev.find(
+        (item) =>
+          item.sample_entry_id === sample.id &&
+          item.size_label === sizeLabel &&
+          item.size_group_name === selectedSizeGroup
       )
+
+      if (exists) {
+        return prev.map((item) =>
+          item.id === exists.id
+            ? {
+                ...item,
+                qty: nextQty,
+              }
+            : item
+        )
+      }
+
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          sample_entry_id: sample.id,
+          order_date: date,
+          china_code: sample.china_code,
+          color_code: sample.color_code,
+          size_group_name: selectedSizeGroup,
+          size_label: sizeLabel,
+          qty: nextQty,
+        },
+      ]
+    })
+  }
+
+  const getSampleTotal = (sampleId: string) => {
+    return sizeLabels.reduce(
+      (sum, size) => sum + Number(getQty(sampleId, size) || 0),
+      0
     )
   }
+
+  const totalOrderQty = useMemo(() => {
+    return samples.reduce(
+      (sum, sample) => sum + getSampleTotal(sample.id),
+      0
+    )
+  }, [samples, quantities, selectedSizeGroup, sizeLabels])
 
   const handleSaveQty = async () => {
     setIsSaving(true)
@@ -59,19 +125,59 @@ export function OrderSheetClient({
     const supabase = createClient()
 
     for (const sample of samples) {
-      const { error } = await supabase
+      const sampleTotal = getSampleTotal(sample.id)
+
+      await supabase
+        .from('order_size_quantities')
+        .delete()
+        .eq('sample_entry_id', sample.id)
+        .eq('order_date', date)
+        .eq('size_group_name', selectedSizeGroup)
+
+      const rows = sizeLabels.map((size) => ({
+        sample_entry_id: sample.id,
+        order_date: date,
+        china_code: sample.china_code,
+        color_code: sample.color_code,
+        size_group_name: selectedSizeGroup,
+        size_label: size,
+        qty: getQty(sample.id, size),
+      }))
+
+      if (rows.length > 0) {
+        const { error: insertError } = await supabase
+          .from('order_size_quantities')
+          .insert(rows)
+
+        if (insertError) {
+          setIsSaving(false)
+          alert('사이즈별 발주수량 저장에 실패했습니다.')
+          return
+        }
+      }
+
+      const { error: sampleError } = await supabase
         .from('sample_entries')
         .update({
-          order_qty: Number(sample.order_qty || 0),
+          size_group_name: selectedSizeGroup,
+          order_qty: sampleTotal,
         })
         .eq('id', sample.id)
 
-      if (error) {
+      if (sampleError) {
         setIsSaving(false)
-        alert(`발주수량 저장 실패: ${sample.china_code}`)
+        alert('발주수량 합계 저장에 실패했습니다.')
         return
       }
     }
+
+    setSamples((prev) =>
+      prev.map((sample) => ({
+        ...sample,
+        size_group_name: selectedSizeGroup,
+        order_qty: getSampleTotal(sample.id),
+      }))
+    )
 
     setIsSaving(false)
     alert('발주수량이 저장되었습니다.')
@@ -84,20 +190,25 @@ export function OrderSheetClient({
 
     if (!ok) return
 
+    await handleSaveQty()
+
     setIsSaving(true)
 
     const supabase = createClient()
     const today = getToday()
 
     for (const sample of samples) {
+      const sampleTotal = getSampleTotal(sample.id)
+
       const { error } = await supabase
         .from('sample_entries')
         .update({
           order_status: '발주완료',
           ordered_at: today,
           inbound_status: sample.inbound_status || '입고대기',
-          inbound_expected_qty:
-            sample.inbound_expected_qty || sample.order_qty || sample.quantity || sample.qty || 0,
+          inbound_expected_qty: sampleTotal,
+          order_qty: sampleTotal,
+          size_group_name: selectedSizeGroup,
         })
         .eq('id', sample.id)
 
@@ -114,8 +225,9 @@ export function OrderSheetClient({
         order_status: '발주완료',
         ordered_at: today,
         inbound_status: sample.inbound_status || '입고대기',
-        inbound_expected_qty:
-          sample.inbound_expected_qty || sample.order_qty || sample.quantity || sample.qty || 0,
+        inbound_expected_qty: getSampleTotal(sample.id),
+        order_qty: getSampleTotal(sample.id),
+        size_group_name: selectedSizeGroup,
       }))
     )
 
@@ -124,38 +236,31 @@ export function OrderSheetClient({
   }
 
   return (
-  <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
-    <div className="mx-auto max-w-6xl space-y-5">
-      <div className="print-header rounded-2xl border bg-white p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="relative h-14 w-14 overflow-hidden rounded-xl border bg-white">
-              <Image
-                src="/logo.png"
-                alt="Company Logo"
-                fill
-                className="object-contain p-1"
-                sizes="56px"
-              />
-            </div>
-
+    <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <div className="print-header rounded-2xl border bg-white p-5">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold tracking-wide text-gray-900">
                 발 주 서
               </h1>
               <p className="mt-1 text-sm text-gray-500">PURCHASE ORDER</p>
             </div>
-          </div>
 
-          <div className="text-right text-sm">
-            <p className="text-gray-500">발주요청일</p>
-            <p className="font-semibold">{date}</p>
+            <div className="text-right text-sm">
+              <p className="text-gray-500">발주요청일</p>
+              <p className="font-semibold">{date}</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <section className="no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        
+        <section className="no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">발주서</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              중국품번 기준 발주서입니다.
+            </p>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Link href="/orders">
@@ -166,21 +271,61 @@ export function OrderSheetClient({
             </Link>
 
             <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="mr-2 h-4 w-4" />
-                프린트
+              <Printer className="mr-2 h-4 w-4" />
+              프린트
             </Button>
 
-            <Button variant="outline" onClick={handleSaveQty} disabled={isSaving}>
+            <Button
+              variant="outline"
+              onClick={handleSaveQty}
+              disabled={isSaving}
+            >
               <Save className="mr-2 h-4 w-4" />
               수량 저장
             </Button>
 
-            <Button onClick={handleCompleteOrder} disabled={isSaving || samples.length === 0}>
+            <Button
+              onClick={handleCompleteOrder}
+              disabled={isSaving || samples.length === 0}
+            >
               <CheckCircle2 className="mr-2 h-4 w-4" />
               발주완료
             </Button>
           </div>
         </section>
+
+        <Card className="no-print">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold text-gray-900">
+                  사이즈 구분 선택
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  선택한 사이즈 기준으로 발주 수량 입력 열이 생성됩니다.
+                </p>
+              </div>
+
+              <div className="w-full sm:w-52">
+                <Select
+                  value={selectedSizeGroup}
+                  onValueChange={setSelectedSizeGroup}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="사이즈 구분 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sizeGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.name}>
+                        {group.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="space-y-4 p-5">
@@ -215,45 +360,56 @@ export function OrderSheetClient({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[850px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-100">
-                    <th className="border px-3 py-2 text-left">중국품번</th>
-                    <th className="border px-3 py-2 text-left">한국품번</th>
-                    <th className="border px-3 py-2 text-left">색상코드</th>
-                    <th className="border px-3 py-2 text-left">색상명</th>
-                    <th className="border px-3 py-2 text-right">샘플수량</th>
-                    <th className="border px-3 py-2 text-right">발주수량</th>
-                    <th className="border px-3 py-2 text-left">상태</th>
+                  <tr className="border-b bg-gray-100 text-center">
+                    <th className="border px-3 py-2 text-center">중국품번</th>
+                    <th className="border px-3 py-2 text-center">한국품번</th>
+                    <th className="border px-3 py-2 text-center">색상코드</th>
+                    <th className="border px-3 py-2 text-center">색상명</th>
+
+                    {sizeLabels.map((size) => (
+                      <th key={size} className="border px-2 py-2 text-center">
+                        {size}
+                      </th>
+                    ))}
+
+                    <th className="border px-3 py-2 text-center">합계</th>
+                    <th className="border px-3 py-2 text-center">상태</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {samples.map((sample) => (
                     <tr key={sample.id} className="border-b">
-                      <td className="border px-3 py-2">{sample.china_code}</td>
-                      <td className="border px-3 py-2">
+                      <td className="border px-3 py-2 text-center">{sample.china_code}</td>
+                      <td className="border px-3 py-2 text-center">
                         {sample.korea_code || '-'}
                       </td>
-                      <td className="border px-3 py-2">
+                      <td className="border px-3 py-2 text-center">
                         {sample.color_code || '-'}
                       </td>
-                      <td className="border px-3 py-2">
+                      <td className="border px-3 py-2 text-center">
                         {sample.color_name || '-'}
                       </td>
-                      <td className="border px-3 py-2 text-right">
-                        {sample.quantity || sample.qty || 0}
+
+                      {sizeLabels.map((size) => (
+                        <td key={size} className="border px-2 py-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            value={getQty(sample.id, size)}
+                            onChange={(e) =>
+                              updateQty(sample, size, e.target.value)
+                            }
+                            className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
+                          />
+                        </td>
+                      ))}
+
+                      <td className="border px-3 py-2 text-center font-semibold">
+                        {getSampleTotal(sample.id)}
                       </td>
-                      <td className="border px-3 py-2 text-right">
-                        <Input
-                          type="number"
-                          min={0}
-                          value={sample.order_qty ?? sample.quantity ?? sample.qty ?? 0}
-                          onChange={(e) =>
-                            updateOrderQty(sample.id, e.target.value)
-                          }
-                          className="ml-auto w-24 text-right"
-                        />
-                      </td>
-                      <td className="border px-3 py-2">
+
+                      <td className="border px-3 py-2 text-center">
                         {sample.order_status || '발주대기'}
                       </td>
                     </tr>
@@ -262,10 +418,13 @@ export function OrderSheetClient({
 
                 <tfoot>
                   <tr className="bg-yellow-50 font-semibold">
-                    <td className="border px-3 py-2" colSpan={5}>
+                    <td
+                      className="border px-3 py-2 text-right"
+                      colSpan={4 + sizeLabels.length}
+                    >
                       합계
                     </td>
-                    <td className="border px-3 py-2 text-right">
+                    <td className="border px-3 py-2 text-center">
                       {totalOrderQty}
                     </td>
                     <td className="border px-3 py-2" />
@@ -276,23 +435,23 @@ export function OrderSheetClient({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="print-image-appendix">
           <CardContent className="space-y-4 p-5">
-            <h2 className="font-semibold text-gray-900">이미지</h2>
+            <h2 className="font-semibold text-gray-900">이미지 별첨</h2>
 
             {samples.length === 0 ? (
               <p className="text-sm text-gray-500">표시할 샘플이 없습니다.</p>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 {samples.map((sample) => (
-                  <div key={sample.id} className="space-y-2">
+                  <div key={sample.id} className="print-image-item space-y-2">
                     <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100">
                       {sample.image_url ? (
                         <Image
                           src={sample.image_url}
                           alt={sample.china_code}
                           fill
-                          className="object-cover"
+                          className="object-contain p-2"
                           sizes="180px"
                         />
                       ) : (

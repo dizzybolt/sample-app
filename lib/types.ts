@@ -33,6 +33,7 @@ export interface SampleEntry {
   color_name?: string | null
   qty?: number | null
   quantity?: number | null
+  size_group_name?: string | null
 
   // 기존 status는 호환용으로 잠시 유지
   status?: string | null
@@ -108,4 +109,35 @@ export interface InboundSheetGroup {
   china_code: string
   representative: SampleEntry
   items: SampleEntry[]
+}
+
+export interface SizeGroup {
+  id: string
+  name: string
+  sizes: string[]
+  sort_order?: number | null
+  is_active?: boolean | null
+  created_at?: string | null
+}
+
+export interface OrderSizeQuantity {
+  id: string
+
+  sample_entry_id?: string | null
+
+  order_date?: string | null
+
+  china_code?: string | null
+
+  color_code?: string | null
+
+  size_group_name?: string | null
+
+  size_label: string
+
+  qty?: number | null
+
+  created_at?: string | null
+
+  updated_at?: string | null
 }
