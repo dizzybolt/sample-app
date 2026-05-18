@@ -80,18 +80,55 @@ function groupByDateAndChinaCode(samples: SampleEntry[]) {
   return Array.from(dateMap.entries()).sort(([a], [b]) => b.localeCompare(a))
 }
 
-export default async function InboundPage() {
+interface InboundPageProps {
+  searchParams?: Promise<{
+    status?: string
+  }>
+}
+
+export default async function InboundPage({ searchParams }: InboundPageProps) {
+  const resolvedSearchParams = await searchParams
+  const statusFilter = resolvedSearchParams?.status || 'all'
+
   const samples = await getInboundSamples()
-  const groupedInbound = groupByDateAndChinaCode(samples)
+
+  const filteredSamples =
+    statusFilter === 'all'
+      ? samples
+      : samples.filter((sample) => sample.inbound_status === statusFilter)
+  const groupedInbound = groupByDateAndChinaCode(filteredSamples)
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-5">
-        <section>
-          <h1 className="text-2xl font-bold text-gray-900">입고관리</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            입고대기, 입고완료, 입고지연 샘플을 발주요청일과 중국품번 기준으로 확인합니다.
-          </p>
+        <section className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">입고관리</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              입고대기, 입고완료, 입고지연 샘플을 발주요청일과 중국품번 기준으로 확인합니다.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: '전체', value: 'all' },
+              { label: '입고대기', value: '입고대기' },
+              { label: '입고완료', value: '입고완료' },
+              { label: '입고지연', value: '입고지연' },
+            ].map((item) => (
+              <Link
+                key={item.value}
+                href={item.value === 'all' ? '/inbound' : `/inbound?status=${encodeURIComponent(item.value)}`}
+                className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                  statusFilter === item.value
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-700'
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
         </section>
 
         {groupedInbound.length === 0 ? (

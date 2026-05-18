@@ -54,18 +54,55 @@ function groupByDateAndChinaCode(samples: SampleEntry[]) {
   return Array.from(dateMap.entries()).sort(([a], [b]) => b.localeCompare(a))
 }
 
-export default async function OrdersPage() {
+interface OrdersPageProps {
+  searchParams?: Promise<{
+    status?: string
+  }>
+}
+
+export default async function OrdersPage({ searchParams }: OrdersPageProps) {
+  const resolvedSearchParams = await searchParams
+  const statusFilter = resolvedSearchParams?.status || 'all'
+
   const samples = await getOrderSamples()
-  const groupedOrders = groupByDateAndChinaCode(samples)
+
+  const filteredSamples =
+    statusFilter === 'all'
+      ? samples
+      : samples.filter((sample) => sample.order_status === statusFilter)
+  const groupedOrders = groupByDateAndChinaCode(filteredSamples)
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-5">
-        <section>
-          <h1 className="text-2xl font-bold text-gray-900">발주관리</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            발주대기, 발주보류, 발주완료 샘플을 발주요청일과 중국품번 기준으로 확인합니다.
-          </p>
+        <section className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">발주관리</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              발주대기, 발주완료, 발주보류 상태의 샘플을 발주요청일과 중국품번 기준으로 확인합니다.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: '전체', value: 'all' },
+              { label: '발주대기', value: '발주대기' },
+              { label: '발주완료', value: '발주완료' },
+              { label: '발주보류', value: '발주보류' },
+            ].map((item) => (
+              <Link
+                key={item.value}
+                href={item.value === 'all' ? '/orders' : `/orders?status=${encodeURIComponent(item.value)}`}
+                className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                  statusFilter === item.value
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-700'
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
         </section>
 
         {groupedOrders.length === 0 ? (

@@ -83,6 +83,9 @@ function getRepresentativeColor(sample: SampleEntry) {
 export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchField, setSearchField] = useState<
+    'all' | 'china_code' | 'korea_code' | 'product_name'
+  >('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [savingChinaCode, setSavingChinaCode] = useState<string | null>(null)
   const [studioFilter, setStudioFilter] = useState<string>('all')
@@ -93,13 +96,33 @@ export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
     return samples.filter((sample) => {
       const itemStatus = sample.item_card_status || '촬영대기'
 
-      const matchesSearch =
-        !keyword ||
-        sample.china_code?.toLowerCase().includes(keyword) ||
-        sample.korea_code?.toLowerCase().includes(keyword) ||
-        sample.product_name?.toLowerCase().includes(keyword) ||
-        sample.color_name?.toLowerCase().includes(keyword) ||
-        sample.color_code?.toLowerCase().includes(keyword)
+let matchesSearch = true
+
+if (searchField === 'all') {
+  matchesSearch =
+    !keyword ||
+    (sample.china_code?.toLowerCase().includes(keyword) ?? false) ||
+    (sample.korea_code?.toLowerCase().includes(keyword) ?? false) ||
+    (sample.product_name?.toLowerCase().includes(keyword) ?? false)
+}
+
+if (searchField === 'china_code') {
+  matchesSearch = keyword
+    ? sample.china_code?.toLowerCase().includes(keyword) ?? false
+    : !sample.china_code
+}
+
+if (searchField === 'korea_code') {
+  matchesSearch = keyword
+    ? sample.korea_code?.toLowerCase().includes(keyword) ?? false
+    : !sample.korea_code
+}
+
+if (searchField === 'product_name') {
+  matchesSearch = keyword
+    ? sample.product_name?.toLowerCase().includes(keyword) ?? false
+    : !sample.product_name
+}
 
       const matchesStatus =
         statusFilter === 'all' ||
@@ -112,7 +135,7 @@ export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
 
       return matchesSearch && matchesStatus && matchesStudio
     })
-  }, [samples, searchTerm, statusFilter, studioFilter])
+  }, [samples, searchTerm, searchField, statusFilter, studioFilter])
 
   const groupedSamples = useMemo(() => {
     return groupSamplesByChinaCode(filteredSamples)
@@ -283,15 +306,47 @@ export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="중국품번, 한국품번, 상품명, 색상 검색"
-                className="pl-9"
-              />
-            </div>
+<div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:flex-1">
+  <div className="w-full sm:w-36">
+    <Select
+      value={searchField}
+      onValueChange={(value) =>
+        setSearchField(
+          value as 'all' | 'china_code' | 'korea_code' | 'product_name'
+        )
+      }
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="검색 구분" />
+      </SelectTrigger>
+
+      <SelectContent>
+        <SelectItem value="all">전체</SelectItem>
+        <SelectItem value="china_code">중국품번</SelectItem>
+        <SelectItem value="korea_code">한국품번</SelectItem>
+        <SelectItem value="product_name">상품명</SelectItem>
+      </SelectContent>
+    </Select>
+  </div>
+
+  <div className="relative flex-1">
+    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+    <Input
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+      placeholder={
+        searchField === 'all'
+          ? '중국품번, 한국품번, 상품명 검색'
+          : searchField === 'china_code'
+            ? '중국품번 검색'
+            : searchField === 'korea_code'
+              ? '한국품번 검색'
+              : '상품명 검색'
+      }
+      className="pl-9"
+    />
+  </div>
+</div>
 
             <div className="w-full lg:w-48">
               <Select
