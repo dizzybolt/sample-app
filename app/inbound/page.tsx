@@ -26,11 +26,36 @@ async function getInboundSamples(): Promise<SampleEntry[]> {
   return data || []
 }
 
+function toKoreaDate(value?: string | null) {
+  if (!value) return ''
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return ''
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+
+  return `${year}-${month}-${day}`
+}
+
 function getDateKey(sample: SampleEntry) {
   return (
-    sample.inbound_expected_at?.slice(0, 10) ||
-    sample.ordered_at?.slice(0, 10) ||
-    sample.created_at?.slice(0, 10) ||
+    toKoreaDate(sample.order_requested_at) ||
+    toKoreaDate(sample.ordered_at) ||
+    toKoreaDate(sample.created_at) ||
     '날짜없음'
   )
 }
@@ -65,7 +90,7 @@ export default async function InboundPage() {
         <section>
           <h1 className="text-2xl font-bold text-gray-900">입고관리</h1>
           <p className="mt-1 text-sm text-gray-500">
-            입고대기, 입고완료, 입고지연 샘플을 입고예정일과 중국품번 기준으로 확인합니다.
+            입고대기, 입고완료, 입고지연 샘플을 발주요청일과 중국품번 기준으로 확인합니다.
           </p>
         </section>
 

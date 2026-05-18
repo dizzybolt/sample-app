@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import type {
   InboundSizeQuantity,
   InboundStatus,
+  OrderExtraRow,
   OrderSizeQuantity,
   PrintColumnHeader,
   PrintHeader,
@@ -24,11 +25,37 @@ interface InboundSheetClientProps {
   orderQuantities: OrderSizeQuantity[]
   initialInboundQuantities: InboundSizeQuantity[]
   printHeader: PrintHeader | null
-  printColumnHeaders: PrintColumnHeader[]
+  columnHeaders: PrintColumnHeader[]
+  orderExtraRows: OrderExtraRow[]
 }
 
 function getToday() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function toKoreaDate(value?: string | null) {
+  if (!value) return ''
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return ''
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+
+  return `${year}-${month}-${day}`
 }
 
 function getAutoInboundStatus(
@@ -48,16 +75,29 @@ export function InboundSheetClient({
   orderQuantities,
   initialInboundQuantities,
   printHeader,
-  printColumnHeaders,
+  columnHeaders,
+  orderExtraRows,
 }: InboundSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [inboundQuantities, setInboundQuantities] = useState(
     initialInboundQuantities
   )
+  const [extraRows, setExtraRows] = useState(orderExtraRows)
   const [isSaving, setIsSaving] = useState(false)
 
+  const representative = samples[0]
+
+  const [inboundDate, setInboundDate] = useState(
+    toKoreaDate(representative?.inbound_at) || ''
+  )
+
+  const orderBaseDate =
+    toKoreaDate(representative?.order_requested_at) ||
+    toKoreaDate(representative?.ordered_at) ||
+    '-'
+
   const sizeGroupName =
-    samples[0]?.size_group_name ||
+    representative?.size_group_name ||
     orderQuantities[0]?.size_group_name ||
     'FREE'
 
@@ -68,6 +108,13 @@ export function InboundSheetClient({
 
     return Array.from(new Set(labels))
   }, [orderQuantities, sizeGroupName])
+
+  const getColumnLabel = (key: string, fallback: string) => {
+    return (
+      columnHeaders.find((item) => item.column_key === key)?.column_label ||
+      fallback
+    )
+  }
 
   const getExpectedQty = (sampleId: string, sizeLabel: string) => {
     const found = orderQuantities.find(
@@ -149,27 +196,102 @@ export function InboundSheetClient({
     )
   }
 
+  const getExtraExpectedQty = (row: OrderExtraRow, size: string) => {
+    return Number(row.size_quantities?.[size] || 0)
+  }
+
+  const getExtraReceivedQty = (row: OrderExtraRow, size: string) => {
+    return Number(
+      row.inbound_size_quantities?.[size] ??
+        row.size_quantities?.[size] ??
+        0
+    )
+  }
+
+  const updateExtraReceivedQty = (
+    rowId: string,
+    size: string,
+    value: string
+  ) => {
+    const qty = value === '' ? 0 : Number(value)
+
+    setExtraRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId
+          ? {
+              ...row,
+              inbound_size_quantities: {
+                ...(row.inbound_size_quantities || {}),
+                [size]: qty,
+              },
+            }
+          : row
+      )
+    )
+  }
+
+  const getExtraExpectedTotal = (row: OrderExtraRow) => {
+    return sizeLabels.reduce(
+      (sum, size) => sum + getExtraExpectedQty(row, size),
+      0
+    )
+  }
+
+  const getExtraReceivedTotal = (row: OrderExtraRow) => {
+    return sizeLabels.reduce(
+      (sum, size) => sum + getExtraReceivedQty(row, size),
+      0
+    )
+  }
+
   const totalExpectedQty = useMemo(() => {
-    return samples.reduce(
+    const sampleTotal = samples.reduce(
       (sum, sample) => sum + getExpectedTotal(sample.id),
       0
     )
-  }, [samples, orderQuantities, sizeLabels])
+
+    const extraTotal = extraRows.reduce(
+      (sum, row) => sum + getExtraExpectedTotal(row),
+      0
+    )
+
+    return sampleTotal + extraTotal
+  }, [samples, orderQuantities, extraRows, sizeLabels])
 
   const totalReceivedQty = useMemo(() => {
-    return samples.reduce(
+    const sampleTotal = samples.reduce(
       (sum, sample) => sum + getReceivedTotal(sample.id),
       0
     )
-  }, [samples, inboundQuantities, sizeLabels])
 
-  const representative = samples[0]
-
-  const getColumnLabel = (key: string, fallback: string) => {
-    return (
-      printColumnHeaders.find((item) => item.column_key === key)?.column_label ||
-      fallback
+    const extraTotal = extraRows.reduce(
+      (sum, row) => sum + getExtraReceivedTotal(row),
+      0
     )
+
+    return sampleTotal + extraTotal
+  }, [samples, inboundQuantities, extraRows, sizeLabels])
+
+  const saveExtraRows = async () => {
+    const supabase = createClient()
+
+    for (const row of extraRows) {
+      const { error } = await supabase
+        .from('order_extra_rows')
+        .update({
+          inbound_size_quantities:
+            row.inbound_size_quantities || row.size_quantities || {},
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', row.id)
+
+      if (error) {
+        alert('추가 행 입고수량 저장에 실패했습니다.')
+        return false
+      }
+    }
+
+    return true
   }
 
   const handleSaveQty = async () => {
@@ -226,6 +348,13 @@ export function InboundSheetClient({
         alert('입고수량 합계 저장에 실패했습니다.')
         return
       }
+    }
+
+    const extraSaved = await saveExtraRows()
+
+    if (!extraSaved) {
+      setIsSaving(false)
+      return
     }
 
     setSamples((prev) =>
@@ -292,6 +421,7 @@ export function InboundSheetClient({
 
     const supabase = createClient()
     const today = getToday()
+    const finalInboundDate = inboundDate || today
 
     for (const sample of samples) {
       const expectedTotal = getExpectedTotal(sample.id)
@@ -304,7 +434,7 @@ export function InboundSheetClient({
           inbound_expected_qty: expectedTotal,
           inbound_received_qty: receivedTotal,
           inbound_status: nextStatus,
-          inbound_at: today,
+          inbound_at: finalInboundDate,
           size_group_name: sizeGroupName,
         })
         .eq('id', sample.id)
@@ -325,11 +455,12 @@ export function InboundSheetClient({
           getExpectedTotal(sample.id),
           getReceivedTotal(sample.id)
         ),
-        inbound_at: today,
+        inbound_at: finalInboundDate,
         size_group_name: sizeGroupName,
       }))
     )
 
+    setInboundDate(finalInboundDate)
     setIsSaving(false)
     alert('입고 처리되었습니다.')
   }
@@ -337,6 +468,43 @@ export function InboundSheetClient({
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-5">
+        <div className="print-header rounded-2xl border bg-white p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold tracking-wide text-gray-900">
+                {printHeader?.title || '입 고 확 인 서'}
+              </h1>
+
+              <p className="mt-1 text-sm text-gray-500">
+                {printHeader?.subtitle || 'INBOUND CONFIRMATION'}
+              </p>
+
+              {printHeader?.footer_memo && (
+                <p className="mt-2 text-sm text-gray-500">
+                  {printHeader.footer_memo}
+                </p>
+              )}
+            </div>
+
+            <div className="text-right text-sm">
+              {printHeader?.company_name && (
+                <p className="font-semibold text-gray-900">
+                  {printHeader.company_name}
+                </p>
+              )}
+
+              {printHeader?.company_info && (
+                <p className="mt-1 text-gray-500">
+                  {printHeader.company_info}
+                </p>
+              )}
+
+              <p className="mt-2 text-gray-500">입고기준일</p>
+              <p className="font-semibold">{inboundDate || '-'}</p>
+            </div>
+          </div>
+        </div>
+
         <section className="no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">입고 상세</h1>
@@ -353,10 +521,10 @@ export function InboundSheetClient({
               </Button>
             </Link>
 
-              <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="mr-2 h-4 w-4" />
-                프린트
-              </Button>
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="mr-2 h-4 w-4" />
+              프린트
+            </Button>
 
             <Button variant="outline" onClick={handleSaveQty} disabled={isSaving}>
               <Save className="mr-2 h-4 w-4" />
@@ -367,56 +535,32 @@ export function InboundSheetClient({
               입고지연
             </Button>
 
-            <Button onClick={handleCompleteInbound} disabled={isSaving || samples.length === 0}>
+            <Button
+              onClick={handleCompleteInbound}
+              disabled={isSaving || samples.length === 0}
+            >
               <CheckCircle2 className="mr-2 h-4 w-4" />
               입고완료
             </Button>
           </div>
         </section>
 
-          <div className="print-header rounded-2xl border bg-white p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-bold tracking-wide text-gray-900">
-                  {printHeader?.title || '입 고 확 인 서'}
-                </h1>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {printHeader?.subtitle || 'INBOUND CONFIRMATION'}
-                </p>
-
-                {printHeader?.footer_memo && (
-                  <p className="mt-2 text-sm text-gray-500">
-                    {printHeader.footer_memo}
-                  </p>
-                )}
-              </div>
-
-              <div className="text-right text-sm">
-                {printHeader?.company_name && (
-                  <p className="font-semibold text-gray-900">
-                    {printHeader.company_name}
-                  </p>
-                )}
-
-                {printHeader?.company_info && (
-                  <p className="mt-1 text-gray-500">
-                    {printHeader.company_info}
-                  </p>
-                )}
-
-                <p className="mt-2 text-gray-500">입고기준일</p>
-                <p className="font-semibold">{date}</p>
-              </div>
-            </div>
-          </div>        
-
         <Card className="print-break-inside-avoid">
           <CardContent className="space-y-4 p-5">
-            <div className="grid gap-3 sm:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-6">
+              <div>
+                <p className="text-xs text-gray-500">발주요청일</p>
+                <p className="font-semibold">{orderBaseDate}</p>
+              </div>
+
               <div>
                 <p className="text-xs text-gray-500">입고기준일</p>
-                <p className="font-semibold">{date}</p>
+                <input
+                  type="date"
+                  value={inboundDate}
+                  onChange={(e) => setInboundDate(e.target.value)}
+                  className="mt-1 w-full rounded-md border px-2 py-1 text-sm font-semibold"
+                />
               </div>
 
               <div>
@@ -469,8 +613,12 @@ export function InboundSheetClient({
                       </th>
                     ))}
 
-                    <th className="border px-3 py-2">입고합계</th>
-                    <th className="border px-3 py-2">상태</th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('total_qty', '입고합계')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('status', '상태')}
+                    </th>
                   </tr>
                 </thead>
 
@@ -497,7 +645,7 @@ export function InboundSheetClient({
                             onChange={(e) =>
                               updateReceivedQty(sample, size, e.target.value)
                             }
-                            className="mx-auto w-16 rounded-md border px-2 py-1 text-center"
+                            className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
                           />
                         </td>
                       ))}
@@ -509,6 +657,41 @@ export function InboundSheetClient({
                       <td className="border px-3 py-2">
                         {sample.inbound_status || '입고대기'}
                       </td>
+                    </tr>
+                  ))}
+
+                  {extraRows.map((row) => (
+                    <tr key={row.id} className="border-b bg-blue-50/40 text-center">
+                      <td className="border px-3 py-2">{chinaCode}</td>
+                      <td className="border px-3 py-2">
+                        {row.korea_code || '-'}
+                      </td>
+                      <td className="border px-3 py-2">
+                        {row.color_code || '-'}
+                      </td>
+                      <td className="border px-3 py-2">
+                        {row.color_name || '-'}
+                      </td>
+
+                      {sizeLabels.map((size) => (
+                        <td key={size} className="border px-2 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={getExtraReceivedQty(row, size)}
+                            onChange={(e) =>
+                              updateExtraReceivedQty(row.id, size, e.target.value)
+                            }
+                            className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
+                          />
+                        </td>
+                      ))}
+
+                      <td className="border px-3 py-2 font-semibold">
+                        {getExtraReceivedTotal(row)}
+                      </td>
+
+                      <td className="border px-3 py-2">추가</td>
                     </tr>
                   ))}
                 </tbody>

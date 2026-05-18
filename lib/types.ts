@@ -211,4 +211,5 @@ export interface OrderExtraRow {
   created_at?: string | null
   updated_at?: string | null
   size_quantities?: Record<string, number> | null
+  inbound_size_quantities?: Record<string, number> | null
 }
