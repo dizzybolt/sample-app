@@ -726,13 +726,15 @@ const saveExtraRows = async () => {
 
             <div className="space-y-2 text-sm">
               {samples
-                .filter((sample) => sample.memo)
+                .filter((sample) => sample.memo || sample.note)
                 .map((sample) => (
                   <div key={sample.id} className="rounded-xl bg-gray-50 p-3">
                     <p className="font-medium text-gray-900">
                       {sample.color_code || '-'} / {sample.color_name || '-'}
                     </p>
-                    <p className="mt-1 text-gray-600">{sample.memo}</p>
+                    <p className="mt-1 text-gray-600">
+                      {sample.memo || sample.note}
+                    </p>
                   </div>
                 ))}
 
@@ -747,7 +749,7 @@ const saveExtraRows = async () => {
                   </div>
                 ))}
 
-              {samples.filter((sample) => sample.memo).length === 0 &&
+              {samples.filter((sample) => sample.memo || sample.note).length === 0 &&
                 extraRows.filter((row) => row.memo).length === 0 && (
                   <p className="text-gray-500">등록된 비고가 없습니다.</p>
                 )}
