@@ -198,3 +198,17 @@ export interface PrintColumnHeader {
   created_at?: string | null
   updated_at?: string | null
 }
+
+export interface OrderExtraRow {
+  id: string
+  order_date?: string | null
+  china_code?: string | null
+  korea_code?: string | null
+  color_code?: string | null
+  color_name?: string | null
+  memo?: string | null
+  sort_order?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  size_quantities?: Record<string, number> | null
+}

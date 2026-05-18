@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup } from '@/lib/types'
+import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup, OrderExtraRow, } from '@/lib/types'
 import { OrderSheetClient } from '@/components/order-sheet-client'
 import { get } from 'http'
 
@@ -10,6 +10,28 @@ interface OrderSheetPageProps {
     date: string
     china_code: string
   }>
+}
+
+async function getOrderExtraRows(
+  date: string,
+  chinaCode: string
+): Promise<OrderExtraRow[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('order_extra_rows')
+    .select('*')
+    .eq('order_date', date)
+    .eq('china_code', chinaCode)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching order extra rows:', error)
+    return []
+  }
+
+  return data || []
 }
 
 async function getPrintHeader(): Promise<PrintHeader | null> {
@@ -123,6 +145,7 @@ export default async function OrderSheetPage({ params }: OrderSheetPageProps) {
   const chinaCode = decodeURIComponent(resolvedParams.china_code)
 
   const samples = await getOrderSheetSamples(date, resolvedParams.china_code)
+  const extraRows = await getOrderExtraRows(date, chinaCode)
 
   const [sizeGroups, printHeader, printColumnHeaders ] = await Promise.all([
     getSizeGroups(),
@@ -144,6 +167,7 @@ export default async function OrderSheetPage({ params }: OrderSheetPageProps) {
       initialQuantities={quantities}
       printHeader={printHeader}
       printColumnHeaders={printColumnHeaders}
+      initialExtraRows={extraRows}
     />
   )
 }

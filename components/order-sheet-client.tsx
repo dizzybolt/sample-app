@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup } from '@/lib/types'
+import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup, OrderExtraRow, } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -25,6 +25,7 @@ interface OrderSheetClientProps {
   initialQuantities: OrderSizeQuantity[]
   printHeader: PrintHeader | null
   printColumnHeaders: PrintColumnHeader[]
+  initialExtraRows: OrderExtraRow[]
 }
 
 function getToday() {
@@ -39,6 +40,7 @@ export function OrderSheetClient({
   initialQuantities,
   printHeader,
   printColumnHeaders,
+  initialExtraRows,
 }: OrderSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [quantities, setQuantities] =
@@ -55,6 +57,7 @@ export function OrderSheetClient({
   const sizeLabels = selectedGroup?.sizes || []
 
   const representative = samples[0]
+  const [extraRows, setExtraRows] = useState<OrderExtraRow[]>(initialExtraRows)
 
   const getColumnLabel = (key: string, fallback: string) => {
   return (
@@ -123,12 +126,132 @@ export function OrderSheetClient({
     )
   }
 
+  const getExtraQty = (row: OrderExtraRow, sizeLabel: string) => {
+    return Number(row.size_quantities?.[sizeLabel] || 0)
+  }
+
+  const getExtraTotal = (row: OrderExtraRow) => {
+    return sizeLabels.reduce(
+      (sum, size) => sum + getExtraQty(row, size),
+      0
+    )
+  }
+
+  const updateExtraRow = (
+    id: string,
+    patch: Partial<OrderExtraRow>
+  ) => {
+    setExtraRows((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              ...patch,
+            }
+          : row
+      )
+    )
+  }
+
+  const updateExtraQty = (
+    id: string,
+    sizeLabel: string,
+    value: string
+  ) => {
+    const qty = value === '' ? 0 : Number(value)
+
+    setExtraRows((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              size_quantities: {
+                ...(row.size_quantities || {}),
+                [sizeLabel]: qty,
+              },
+            }
+          : row
+      )
+    )
+  }
+
+  const addExtraRow = () => {
+    setExtraRows((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        order_date: date,
+        china_code: chinaCode,
+        korea_code: '',
+        color_code: '',
+        color_name: '',
+        memo: '',
+        sort_order: prev.length + 1,
+        size_quantities: {},
+      },
+    ])
+  }
+
+  const deleteExtraRow = (id: string) => {
+    setExtraRows((prev) => prev.filter((row) => row.id !== id))
+  }
+
   const totalOrderQty = useMemo(() => {
-    return samples.reduce(
+    const sampleTotal = samples.reduce(
       (sum, sample) => sum + getSampleTotal(sample.id),
       0
     )
-  }, [samples, quantities, selectedSizeGroup, sizeLabels])
+
+    const extraTotal = extraRows.reduce(
+      (sum, row) => sum + getExtraTotal(row),
+      0
+    )
+
+    return sampleTotal + extraTotal
+  }, [samples, quantities, extraRows, selectedSizeGroup, sizeLabels])
+
+const saveExtraRows = async () => {
+  const supabase = createClient()
+
+  await supabase
+    .from('order_extra_rows')
+    .delete()
+    .eq('order_date', date)
+    .eq('china_code', chinaCode)
+
+  const rowsToInsert = extraRows
+    .filter(
+      (row) =>
+        row.korea_code ||
+        row.color_code ||
+        row.color_name ||
+        row.memo ||
+        getExtraTotal(row) > 0
+    )
+    .map((row, index) => ({
+      order_date: date,
+      china_code: chinaCode,
+      korea_code: row.korea_code || null,
+      color_code: row.color_code || null,
+      color_name: row.color_name || null,
+      memo: row.memo || null,
+      sort_order: index + 1,
+      size_quantities: row.size_quantities || {},
+    }))
+
+  if (rowsToInsert.length > 0) {
+    const { error } = await supabase
+      .from('order_extra_rows')
+      .insert(rowsToInsert)
+
+    if (error) {
+      alert('추가 행 저장에 실패했습니다.')
+      return false
+    }
+  }
+
+  return true
+}
 
   const handleSaveQty = async () => {
     setIsSaving(true)
@@ -191,6 +314,12 @@ export function OrderSheetClient({
     )
 
     setIsSaving(false)
+    const extraSaved = await saveExtraRows()
+
+    if (!extraSaved) {
+      setIsSaving(false)
+      return
+    }
     alert('발주수량이 저장되었습니다.')
   }
 
@@ -448,6 +577,81 @@ export function OrderSheetClient({
                       </td>
                     </tr>
                   ))}
+                    {extraRows.map((row) => (
+                      <tr key={row.id} className="border-b bg-blue-50/40">
+                        <td className="border px-3 py-2 text-center">
+                          {chinaCode}
+                        </td>
+
+                        <td className="border px-2 py-2">
+                          <input
+                            value={row.korea_code || ''}
+                            onChange={(e) =>
+                              updateExtraRow(row.id, {
+                                korea_code: e.target.value,
+                              })
+                            }
+                            className="w-full rounded-md border px-2 py-1 text-center"
+                            placeholder="한국품번"
+                          />
+                        </td>
+
+                        <td className="border px-2 py-2">
+                          <input
+                            value={row.color_code || ''}
+                            onChange={(e) =>
+                              updateExtraRow(row.id, {
+                                color_code: e.target.value,
+                              })
+                            }
+                            className="w-full rounded-md border px-2 py-1 text-center"
+                            placeholder="색상코드"
+                          />
+                        </td>
+
+                        <td className="border px-2 py-2">
+                          <input
+                            value={row.color_name || ''}
+                            onChange={(e) =>
+                              updateExtraRow(row.id, {
+                                color_name: e.target.value,
+                              })
+                            }
+                            className="w-full rounded-md border px-2 py-1 text-center"
+                            placeholder="색상명/요청내용"
+                          />
+                        </td>
+
+                        {sizeLabels.map((size) => (
+                          <td key={size} className="border px-2 py-2 text-center">
+                            <input
+                              type="number"
+                              min={0}
+                              value={getExtraQty(row, size)}
+                              onChange={(e) =>
+                                updateExtraQty(row.id, size, e.target.value)
+                              }
+                              className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
+                            />
+                          </td>
+                        ))}
+
+                        <td className="border px-3 py-2 text-center font-semibold">
+                          {getExtraTotal(row)}
+                        </td>
+
+                        <td className="border px-2 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => deleteExtraRow(row.id)}
+                            className="no-print text-xs text-red-500"
+                          >
+                            삭제
+                          </button>
+                          <span className="hidden print:inline">추가</span>
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
 
                 <tfoot>
@@ -468,6 +672,12 @@ export function OrderSheetClient({
             </div>
           </CardContent>
         </Card>
+
+        <div className="no-print flex justify-end">
+          <Button variant="outline" onClick={addExtraRow}>
+            추가 행 추가
+          </Button>
+        </div>
 
         <Card className="print-image-appendix">
           <CardContent className="space-y-4 p-5">
@@ -509,6 +719,41 @@ export function OrderSheetClient({
             )}
           </CardContent>
         </Card>
+
+        <Card className="print-break-inside-avoid">
+          <CardContent className="space-y-3 p-5">
+            <h2 className="font-semibold text-gray-900">비고</h2>
+
+            <div className="space-y-2 text-sm">
+              {samples
+                .filter((sample) => sample.memo)
+                .map((sample) => (
+                  <div key={sample.id} className="rounded-xl bg-gray-50 p-3">
+                    <p className="font-medium text-gray-900">
+                      {sample.color_code || '-'} / {sample.color_name || '-'}
+                    </p>
+                    <p className="mt-1 text-gray-600">{sample.memo}</p>
+                  </div>
+                ))}
+
+              {extraRows
+                .filter((row) => row.memo)
+                .map((row) => (
+                  <div key={row.id} className="rounded-xl bg-blue-50 p-3">
+                    <p className="font-medium text-gray-900">
+                      추가 행 / {row.color_code || '-'} / {row.color_name || '-'}
+                    </p>
+                    <p className="mt-1 text-gray-600">{row.memo}</p>
+                  </div>
+                ))}
+
+              {samples.filter((sample) => sample.memo).length === 0 &&
+                extraRows.filter((row) => row.memo).length === 0 && (
+                  <p className="text-gray-500">등록된 비고가 없습니다.</p>
+                )}
+            </div>
+          </CardContent>
+        </Card>        
       </div>
     </main>
   )
