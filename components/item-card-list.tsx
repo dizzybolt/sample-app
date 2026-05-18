@@ -88,6 +88,9 @@ export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
   >('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [savingChinaCode, setSavingChinaCode] = useState<string | null>(null)
+  const [representativeImageMap, setRepresentativeImageMap] = useState<
+    Record<string, SampleEntry>
+  >({})
   const [studioFilter, setStudioFilter] = useState<string>('all')
 
   const filteredSamples = useMemo(() => {
@@ -408,6 +411,8 @@ if (searchField === 'product_name') {
           <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {groupedSamples.map((group) => {
               const representative = group.representative
+              const displayRepresentative =
+                representativeImageMap[group.china_code] || representative              
               const items = group.items
               const ids = items.map((item) => item.id)
               const groupStatus = getGroupStatus(items)
@@ -499,10 +504,10 @@ if (searchField === 'product_name') {
                   </div>
 
                     <div className="relative aspect-[5/3] overflow-hidden rounded-2xl bg-gray-50">
-                      {representative.image_url ? (
+                      {displayRepresentative.image_url ? (
                         <Image
-                          src={representative.image_url}
-                          alt={representative.china_code}
+                          src={displayRepresentative.image_url}
+                          alt={displayRepresentative.china_code}
                           fill
                           className="object-contain p-3"
                           sizes="420px"
@@ -529,9 +534,9 @@ if (searchField === 'product_name') {
                         </div>
 
                         <div>
-                          <p className="text-xs text-gray-500">대표컬러</p>
+                          <p className="text-xs text-gray-500">컬러</p>
                           <p className="truncate font-medium">
-                            {getRepresentativeColor(representative)}
+                            {getRepresentativeColor(displayRepresentative)}
                           </p>
                         </div>
 
@@ -643,9 +648,18 @@ if (searchField === 'product_name') {
 
                       <div className="flex gap-2 overflow-x-auto pb-1">
                         {items.map((item) => (
-                          <div
+                          <button
                             key={item.id}
-                            className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-gray-50"
+                            type="button"
+                            onClick={() =>
+                              setRepresentativeImageMap((prev) => ({
+                                ...prev,
+                                [group.china_code]: item,
+                              }))
+                            }
+                            className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-gray-50 ${
+                              displayRepresentative.id === item.id ? 'ring-2 ring-gray-900' : ''
+                            }`}
                           >
                             {item.image_url ? (
                               <Image
@@ -660,7 +674,7 @@ if (searchField === 'product_name') {
                                 없음
                               </div>
                             )}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
