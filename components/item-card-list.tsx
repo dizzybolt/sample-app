@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useMemo, useState } from 'react'
-import { Search, Save } from 'lucide-react'
+import { Copy, Search, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ColorCode, ItemCardStatus, SampleEntry, Studio } from '@/lib/types'
 import { groupSamplesByChinaCode } from '@/lib/order-utils'
@@ -270,6 +270,8 @@ if (searchField === 'product_name') {
         String(formData.get('cost_price') || '') === ''
           ? null
           : Number(formData.get('cost_price')),
+      shoot_image_url:
+        String(formData.get('shoot_image_url') || '').trim() || null,          
     }
 
     const { error } = await supabase
@@ -610,24 +612,32 @@ if (searchField === 'product_name') {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 rounded-xl bg-gray-50 p-3 text-sm">
-                        <div>
-                          <p className="text-xs text-gray-500">판매가</p>
-                          <p className="font-medium">
-                            {displayPrice(representative.sale_price)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">TAG가</p>
-                          <p className="font-medium">
-                            {displayPrice(representative.tag_price)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">원가</p>
-                          <p className="font-medium">
-                            {displayPrice(representative.cost_price)}
-                          </p>
+                      <div className="space-y-2">
+                        <label className="text-xs text-gray-500">촬영이미지 경로</label>
+
+                        <div className="flex gap-2">
+                          <Input
+                            name="shoot_image_url"
+                            defaultValue={representative.shoot_image_url || ''}
+                            placeholder="촬영이미지 경로"
+                            className="flex-1"
+                          />
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              if (!representative.shoot_image_url) {
+                                alert('복사할 링크가 없습니다.')
+                                return
+                              }
+
+                              navigator.clipboard.writeText(representative.shoot_image_url)
+                              alert('촬영이미지 링크가 복사되었습니다.')
+                            }}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
 

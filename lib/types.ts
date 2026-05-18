@@ -34,7 +34,7 @@ export interface SampleEntry {
   qty?: number | null
   quantity?: number | null
   size_group_name?: string | null
-
+  shoot_image_url?: string | null
   // 기존 status는 호환용으로 잠시 유지
   status?: string | null
 
