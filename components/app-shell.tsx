@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3,
+  Camera,
   ClipboardList,
+  FileCog,
   FileText,
   Home,
   IdCard,
@@ -12,60 +14,24 @@ import {
   PackageCheck,
   Ruler,
   X,
-  Camera,
-  FileCog,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
-const navItems = [
-  {
-    title: '홈',
-    href: '/',
-    icon: Home,
-  },
-  {
-    title: '대시보드',
-    href: '/dashboard',
-    icon: BarChart3,
-  },
-  {
-    title: '샘플관리',
-    href: '/samples',
-    icon: ClipboardList,
-  },
-  {
-    title: '아이템카드',
-    href: '/item-cards',
-    icon: IdCard,
-  },
-  {
-    title: '발주관리',
-    href: '/orders',
-    icon: FileText,
-  },
-  {
-    title: '입고관리',
-    href: '/inbound',
-    icon: PackageCheck,
-  },
-  {
-  title: '사이즈표',
-  href: '/size-groups',
-  icon: Ruler,
-  },
-  {
-  title: '스튜디오',
-  href: '/studios',
-  icon: Camera,
-  },
-  {
-    title: '출력 헤더 관리',
-    href: '/print-headers',
-    icon: FileCog,
-  }
+const workNavItems = [
+  { title: '홈', href: '/', icon: Home },
+  { title: '대시보드', href: '/dashboard', icon: BarChart3 },
+  { title: '샘플관리', href: '/samples', icon: ClipboardList },
+  { title: '아이템카드', href: '/item-cards', icon: IdCard },
+  { title: '발주관리', href: '/orders', icon: FileText },
+  { title: '입고관리', href: '/inbound', icon: PackageCheck },
+]
 
+const adminNavItems = [
+  { title: '사이즈표', href: '/size-groups', icon: Ruler },
+  { title: '스튜디오', href: '/studios', icon: Camera },
+  { title: '출력 헤더 관리', href: '/print-headers', icon: FileCog },
 ]
 
 interface AppShellProps {
@@ -76,6 +42,29 @@ export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
 
+  const renderNavItem = (item: (typeof workNavItems)[number]) => {
+    const Icon = item.icon
+    const isActive =
+      item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={() => setIsOpen(false)}
+        className={cn(
+          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
+          isActive
+            ? 'bg-gray-900 text-white'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        )}
+      >
+        <Icon className="h-4 w-4" />
+        {item.title}
+      </Link>
+    )
+  }
+
   const sidebar = (
     <aside className="flex h-full w-64 flex-col border-r bg-white">
       <div className="border-b px-5 py-4">
@@ -83,31 +72,24 @@ export function AppShell({ children }: AppShellProps) {
         <p className="mt-1 text-xs text-gray-500">Sample Workflow</p>
       </div>
 
-      <nav className="flex-1 space-y-1 p-3">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive =
-            item.href === '/'
-              ? pathname === '/'
-              : pathname.startsWith(item.href)
+      <nav className="flex-1 overflow-y-auto p-3">
+        <div className="space-y-1">
+          <p className="px-3 pb-2 pt-1 text-xs font-semibold text-gray-400">
+            Menu
+          </p>
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setIsOpen(false)}
-              className={cn(
-                'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
-                isActive
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.title}
-            </Link>
-          )
-        })}
+          {workNavItems.map(renderNavItem)}
+        </div>
+
+        <div className="mt-6 border-t pt-4">
+          <p className="px-3 pb-2 text-xs font-semibold text-gray-400">
+            Setting
+          </p>
+
+          <div className="space-y-1">
+            {adminNavItems.map(renderNavItem)}
+          </div>
+        </div>
       </nav>
     </aside>
   )
