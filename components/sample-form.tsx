@@ -421,6 +421,51 @@ export function SampleForm({
     }
   }
 
+  const uploadImageOnly = async () => {
+  if (!imageFile) {
+    throw new Error('이미지 파일이 필요합니다.')
+  }
+
+  const formData = new FormData()
+  formData.append('file', imageFile)
+  formData.append('china_code', chinaCode.trim() || 'NOCHINA')
+  formData.append('color_code', selectedColorCode || 'NOCOLOR')
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 60000)
+
+  try {
+    const res = await fetch(
+      'https://sample-upload-api.onrender.com/upload-only',
+      {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      }
+    )
+
+    const data = await res.json()
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.detail || data.message || '이미지 업로드 실패')
+    }
+
+    return data.image_url || data.url
+  } catch (fetchError: unknown) {
+    const err = fetchError as { name?: string }
+
+    if (err?.name === 'AbortError') {
+      throw new Error(
+        '업로드 시간이 너무 오래 걸립니다. 이미지 용량을 줄이거나 다시 시도해주세요.'
+      )
+    }
+
+    throw fetchError
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
   const resetForNewEntry = () => {
     setChinaCode(getTodayCode())
     setKoreaCode('')
@@ -483,18 +528,8 @@ export function SampleForm({
       if (sample?.id) {
         let nextImageUrl = imageUrl || sample.image_url || null
 
-        /*
-          중요:
-          현재 uploadImageAndCreateSample()은 신규 샘플 생성까지 하는 API라서
-          수정 모드에서 사용하면 중복 데이터가 생길 수 있습니다.
-
-          그래서 우선 이미지 파일을 새로 선택한 경우에는 기존처럼 막아두고,
-          image_url만 직접 변경되는 구조로 둡니다.
-        */
         if (imageFile) {
-          throw new Error(
-            '현재 업로드 API가 신규 샘플 생성용이라 이미지 파일 변경은 아직 분리 작업이 필요합니다.'
-          )
+          nextImageUrl = await uploadImageOnly()
         }
 
         const sampleData = {
@@ -507,10 +542,8 @@ export function SampleForm({
           confirmed_at: confirmedAt ? confirmedAt.toISOString() : null,
           status,
           sample_status: status,
-          order_status:
-            status === '진행' ? sample?.order_status || '발주대기' : null,
-          item_card_status:
-            status === '진행' ? sample?.item_card_status || '촬영대기' : null,
+          order_status: status === '진행' ? sample?.order_status || '발주대기' : null,
+          item_card_status: status === '진행' ? sample?.item_card_status || '촬영대기' : null,
           note: memo.trim() || null,
           order_qty: orderQty ? parseInt(orderQty, 10) || 0 : null,
           ordered_at: orderedAt ? orderedAt.toISOString() : null,
