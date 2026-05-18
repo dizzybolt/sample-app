@@ -481,8 +481,20 @@ export function SampleForm({
       }
 
       if (sample?.id) {
+        let nextImageUrl = imageUrl || sample.image_url || null
+
+        /*
+          중요:
+          현재 uploadImageAndCreateSample()은 신규 샘플 생성까지 하는 API라서
+          수정 모드에서 사용하면 중복 데이터가 생길 수 있습니다.
+
+          그래서 우선 이미지 파일을 새로 선택한 경우에는 기존처럼 막아두고,
+          image_url만 직접 변경되는 구조로 둡니다.
+        */
         if (imageFile) {
-          throw new Error('이미지 변경은 아직 지원하지 않습니다.')
+          throw new Error(
+            '현재 업로드 API가 신규 샘플 생성용이라 이미지 파일 변경은 아직 분리 작업이 필요합니다.'
+          )
         }
 
         const sampleData = {
@@ -495,12 +507,14 @@ export function SampleForm({
           confirmed_at: confirmedAt ? confirmedAt.toISOString() : null,
           status,
           sample_status: status,
-          order_status: status === '진행' ? sample?.order_status || '발주대기' : null,
-          item_card_status: status === '진행' ? sample?.item_card_status || '촬영대기' : null,
+          order_status:
+            status === '진행' ? sample?.order_status || '발주대기' : null,
+          item_card_status:
+            status === '진행' ? sample?.item_card_status || '촬영대기' : null,
           note: memo.trim() || null,
           order_qty: orderQty ? parseInt(orderQty, 10) || 0 : null,
           ordered_at: orderedAt ? orderedAt.toISOString() : null,
-          image_url: imageUrl || null,
+          image_url: nextImageUrl,
         }
 
         const { error: updateError } = await supabase
