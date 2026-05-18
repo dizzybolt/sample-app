@@ -189,3 +189,12 @@ export interface PrintHeader {
   created_at?: string | null
   updated_at?: string | null
 }
+
+export interface PrintColumnHeader {
+  id: string
+  type: 'order' | 'inbound'
+  column_key: string
+  column_label: string
+  created_at?: string | null
+  updated_at?: string | null
+}

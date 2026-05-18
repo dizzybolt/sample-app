@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { OrderSizeQuantity, SampleEntry, SizeGroup } from '@/lib/types'
+import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -23,6 +23,8 @@ interface OrderSheetClientProps {
   initialSamples: SampleEntry[]
   sizeGroups: SizeGroup[]
   initialQuantities: OrderSizeQuantity[]
+  printHeader: PrintHeader | null
+  printColumnHeaders: PrintColumnHeader[]
 }
 
 function getToday() {
@@ -35,6 +37,8 @@ export function OrderSheetClient({
   initialSamples,
   sizeGroups,
   initialQuantities,
+  printHeader,
+  printColumnHeaders,
 }: OrderSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [quantities, setQuantities] =
@@ -51,6 +55,13 @@ export function OrderSheetClient({
   const sizeLabels = selectedGroup?.sizes || []
 
   const representative = samples[0]
+
+  const getColumnLabel = (key: string, fallback: string) => {
+  return (
+    printColumnHeaders.find((item) => item.column_key === key)?.column_label ||
+    fallback
+  )
+}
 
   const getQty = (sampleId: string, sizeLabel: string) => {
     const found = quantities.find(
@@ -238,21 +249,6 @@ export function OrderSheetClient({
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-5">
-        <div className="print-header rounded-2xl border bg-white p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold tracking-wide text-gray-900">
-                발 주 서
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">PURCHASE ORDER</p>
-            </div>
-
-            <div className="text-right text-sm">
-              <p className="text-gray-500">발주요청일</p>
-              <p className="font-semibold">{date}</p>
-            </div>
-          </div>
-        </div>
 
         <section className="no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -294,42 +290,46 @@ export function OrderSheetClient({
           </div>
         </section>
 
-        <Card className="no-print">
-          <CardContent className="space-y-4 p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-semibold text-gray-900">
-                  사이즈 구분 선택
-                </h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  선택한 사이즈 기준으로 발주 수량 입력 열이 생성됩니다.
-                </p>
-              </div>
+      <div className="print-header rounded-2xl border bg-white p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-wide text-gray-900">
+              {printHeader?.title || '발 주 서'}
+            </h1>
 
-              <div className="w-full sm:w-52">
-                <Select
-                  value={selectedSizeGroup}
-                  onValueChange={setSelectedSizeGroup}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="사이즈 구분 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sizeGroups.map((group) => (
-                      <SelectItem key={group.id} value={group.name}>
-                        {group.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <p className="mt-1 text-sm text-gray-500">
+              {printHeader?.subtitle || 'PURCHASE ORDER'}
+            </p>
+
+            {printHeader?.footer_memo && (
+              <p className="mt-2 text-sm text-gray-500">
+                {printHeader.footer_memo}
+              </p>
+            )}
+          </div>
+
+          <div className="text-right text-sm">
+            {printHeader?.company_name && (
+              <p className="font-semibold text-gray-900">
+                {printHeader.company_name}
+              </p>
+            )}
+
+            {printHeader?.company_info && (
+              <p className="mt-1 text-gray-500">
+                {printHeader.company_info}
+              </p>
+            )}
+
+            <p className="mt-2 text-gray-500">발주요청일</p>
+            <p className="font-semibold">{date}</p>
+          </div>
+        </div>
+      </div>
 
         <Card>
           <CardContent className="space-y-4 p-5">
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-5">
               <div>
                 <p className="text-xs text-gray-500">발주요청일</p>
                 <p className="font-semibold">{date}</p>
@@ -351,6 +351,28 @@ export function OrderSheetClient({
                 <p className="text-xs text-gray-500">총 발주수량</p>
                 <p className="font-semibold">{totalOrderQty}개</p>
               </div>
+              <div className="no-print">
+                <p className="text-xs text-gray-500">사이즈 구분</p>
+
+                <div className="mt-1">
+                  <Select
+                    value={selectedSizeGroup}
+                    onValueChange={setSelectedSizeGroup}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="사이즈 구분 선택" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {sizeGroups.map((group) => (
+                        <SelectItem key={group.id} value={group.name}>
+                          {group.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -361,10 +383,18 @@ export function OrderSheetClient({
               <table className="w-full min-w-[850px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b bg-gray-100 text-center">
-                    <th className="border px-3 py-2 text-center">중국품번</th>
-                    <th className="border px-3 py-2 text-center">한국품번</th>
-                    <th className="border px-3 py-2 text-center">색상코드</th>
-                    <th className="border px-3 py-2 text-center">색상명</th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('china_code', '중국품번')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('korea_code', '한국품번')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('color_code', '색상코드')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('color_name', '색상명')}
+                    </th>
 
                     {sizeLabels.map((size) => (
                       <th key={size} className="border px-2 py-2 text-center">
@@ -372,8 +402,12 @@ export function OrderSheetClient({
                       </th>
                     ))}
 
-                    <th className="border px-3 py-2 text-center">합계</th>
-                    <th className="border px-3 py-2 text-center">상태</th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('total_qty', '합계')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('status', '상태')}
+                    </th>
                   </tr>
                 </thead>
 

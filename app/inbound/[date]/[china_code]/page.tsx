@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import type {
   InboundSizeQuantity,
   OrderSizeQuantity,
+  PrintColumnHeader,
+  PrintHeader,
   SampleEntry,
 } from '@/lib/types'
 import { InboundSheetClient } from '@/components/inbound-sheet-client'
@@ -13,6 +15,39 @@ interface InboundSheetPageProps {
     date: string
     china_code: string
   }>
+}
+
+async function getPrintColumnHeaders(): Promise<PrintColumnHeader[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('print_column_headers')
+    .select('*')
+    .eq('type', 'inbound')
+
+  if (error) {
+    console.error('Error fetching inbound print column headers:', error)
+    return []
+  }
+
+  return data || []
+}
+
+async function getPrintHeader(): Promise<PrintHeader | null> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('print_headers')
+    .select('*')
+    .eq('type', 'inbound')
+    .single()
+
+  if (error) {
+    console.error('Error fetching inbound print header:', error)
+    return null
+  }
+
+  return data
 }
 
 async function getInboundSheetSamples(
@@ -99,9 +134,16 @@ export default async function InboundSheetPage({
   const samples = await getInboundSheetSamples(date, resolvedParams.china_code)
   const sampleIds = samples.map((sample) => sample.id)
 
-  const [orderQuantities, inboundQuantities] = await Promise.all([
+  const [
+    orderQuantities,
+    inboundQuantities,
+    printHeader,
+    printColumnHeaders,
+  ] = await Promise.all([
     getOrderSizeQuantities(sampleIds),
     getInboundSizeQuantities(date, sampleIds),
+    getPrintHeader(),
+    getPrintColumnHeaders(),
   ])
 
   return (
@@ -111,6 +153,8 @@ export default async function InboundSheetPage({
       initialSamples={samples}
       orderQuantities={orderQuantities}
       initialInboundQuantities={inboundQuantities}
+      printHeader={printHeader}
+      printColumnHeaders={printColumnHeaders}
     />
   )
 }

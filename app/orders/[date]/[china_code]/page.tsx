@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import type { OrderSizeQuantity, SampleEntry, SizeGroup } from '@/lib/types'
+import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup } from '@/lib/types'
 import { OrderSheetClient } from '@/components/order-sheet-client'
+import { get } from 'http'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +10,39 @@ interface OrderSheetPageProps {
     date: string
     china_code: string
   }>
+}
+
+async function getPrintHeader(): Promise<PrintHeader | null> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('print_headers')
+    .select('*')
+    .eq('type', 'order')
+    .single()
+
+  if (error) {
+    console.error('Error fetching order print header:', error)
+    return null
+  }
+
+  return data
+}
+
+async function getPrintColumnHeaders(): Promise<PrintColumnHeader[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('print_column_headers')
+    .select('*')
+    .eq('type', 'order')
+
+  if (error) {
+    console.error('Error fetching order print column headers:', error)
+    return []
+  }
+
+  return data || []
 }
 
 async function getOrderSheetSamples(
@@ -89,7 +123,13 @@ export default async function OrderSheetPage({ params }: OrderSheetPageProps) {
   const chinaCode = decodeURIComponent(resolvedParams.china_code)
 
   const samples = await getOrderSheetSamples(date, resolvedParams.china_code)
-  const sizeGroups = await getSizeGroups()
+
+  const [sizeGroups, printHeader, printColumnHeaders ] = await Promise.all([
+    getSizeGroups(),
+    getPrintHeader(),
+    getPrintColumnHeaders(),
+  ])
+
   const quantities = await getOrderSizeQuantities(
     date,
     samples.map((sample) => sample.id)
@@ -102,6 +142,8 @@ export default async function OrderSheetPage({ params }: OrderSheetPageProps) {
       initialSamples={samples}
       sizeGroups={sizeGroups}
       initialQuantities={quantities}
+      printHeader={printHeader}
+      printColumnHeaders={printColumnHeaders}
     />
   )
 }

@@ -13,6 +13,7 @@ import {
   Ruler,
   X,
   Camera,
+  FileCog,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -59,6 +60,12 @@ const navItems = [
   href: '/studios',
   icon: Camera,
   },
+  {
+    title: '출력 헤더 관리',
+    href: '/print-headers',
+    icon: FileCog,
+  }
+
 ]
 
 interface AppShellProps {

@@ -9,6 +9,8 @@ import type {
   InboundSizeQuantity,
   InboundStatus,
   OrderSizeQuantity,
+  PrintColumnHeader,
+  PrintHeader,
   SampleEntry,
 } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -21,6 +23,8 @@ interface InboundSheetClientProps {
   initialSamples: SampleEntry[]
   orderQuantities: OrderSizeQuantity[]
   initialInboundQuantities: InboundSizeQuantity[]
+  printHeader: PrintHeader | null
+  printColumnHeaders: PrintColumnHeader[]
 }
 
 function getToday() {
@@ -43,6 +47,8 @@ export function InboundSheetClient({
   initialSamples,
   orderQuantities,
   initialInboundQuantities,
+  printHeader,
+  printColumnHeaders,
 }: InboundSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [inboundQuantities, setInboundQuantities] = useState(
@@ -158,6 +164,13 @@ export function InboundSheetClient({
   }, [samples, inboundQuantities, sizeLabels])
 
   const representative = samples[0]
+
+  const getColumnLabel = (key: string, fallback: string) => {
+    return (
+      printColumnHeaders.find((item) => item.column_key === key)?.column_label ||
+      fallback
+    )
+  }
 
   const handleSaveQty = async () => {
     setIsSaving(true)
@@ -361,6 +374,43 @@ export function InboundSheetClient({
           </div>
         </section>
 
+          <div className="print-header rounded-2xl border bg-white p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold tracking-wide text-gray-900">
+                  {printHeader?.title || '입 고 확 인 서'}
+                </h1>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {printHeader?.subtitle || 'INBOUND CONFIRMATION'}
+                </p>
+
+                {printHeader?.footer_memo && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    {printHeader.footer_memo}
+                  </p>
+                )}
+              </div>
+
+              <div className="text-right text-sm">
+                {printHeader?.company_name && (
+                  <p className="font-semibold text-gray-900">
+                    {printHeader.company_name}
+                  </p>
+                )}
+
+                {printHeader?.company_info && (
+                  <p className="mt-1 text-gray-500">
+                    {printHeader.company_info}
+                  </p>
+                )}
+
+                <p className="mt-2 text-gray-500">입고기준일</p>
+                <p className="font-semibold">{date}</p>
+              </div>
+            </div>
+          </div>        
+
         <Card className="print-break-inside-avoid">
           <CardContent className="space-y-4 p-5">
             <div className="grid gap-3 sm:grid-cols-5">
@@ -400,10 +450,18 @@ export function InboundSheetClient({
               <table className="w-full min-w-[850px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b bg-gray-100 text-center">
-                    <th className="border px-3 py-2">중국품번</th>
-                    <th className="border px-3 py-2">한국품번</th>
-                    <th className="border px-3 py-2">색상코드</th>
-                    <th className="border px-3 py-2">색상명</th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('china_code', '중국품번')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('korea_code', '한국품번')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('color_code', '색상코드')}
+                    </th>
+                    <th className="border px-3 py-2">
+                      {getColumnLabel('color_name', '색상명')}
+                    </th>
 
                     {sizeLabels.map((size) => (
                       <th key={size} className="border px-2 py-2">
