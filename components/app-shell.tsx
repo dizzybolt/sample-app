@@ -73,7 +73,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   const sidebar = (
-    <aside className="flex h-full w-64 flex-col border-r bg-white">
+    <aside className="flex h-full w-64 flex-col overflow-hidden border-r bg-white">
       <div className="border-b px-5 py-4">
         <h1 className="text-lg font-bold text-gray-900">샘플 입고 관리</h1>
         <p className="mt-1 text-xs text-gray-500">Sample Workflow</p>
@@ -98,9 +98,9 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         </div>
       </nav>
-      <div className="border-t p-3">
-        {renderNavItem(guideNavItem)}
-      </div>
+        <div className="shrink-0 border-t bg-white p-3">
+          {renderNavItem(guideNavItem)}
+        </div>
     </aside>
   )
 
@@ -132,7 +132,7 @@ export function AppShell({ children }: AppShellProps) {
             onClick={() => setIsOpen(false)}
           />
 
-          <div className="absolute inset-y-0 left-0 w-64 bg-white shadow-xl">
+          <div className="absolute inset-y-0 left-0 flex w-64 flex-col bg-white shadow-xl">
             <div className="flex h-14 items-center justify-between border-b px-4">
               <span className="text-sm font-semibold">메뉴</span>
               <Button
@@ -145,7 +145,9 @@ export function AppShell({ children }: AppShellProps) {
               </Button>
             </div>
 
-            {sidebar}
+            <div className="min-h-0 flex-1">
+              {sidebar}
+            </div>
           </div>
         </div>
       )}
