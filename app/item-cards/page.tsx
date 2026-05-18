@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ItemCardList } from '@/components/item-card-list'
-import type { ColorCode, SampleEntry } from '@/lib/types'
+import type { ColorCode, SampleEntry, Studio } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,10 +40,35 @@ async function getColorCodes(): Promise<ColorCode[]> {
 }
 
 export default async function ItemCardsPage() {
-  const [samples, colorCodes] = await Promise.all([
+  const [samples, colorCodes, studios] = await Promise.all([
     getSamples(),
     getColorCodes(),
+    getStudios(),
   ])
 
-  return <ItemCardList initialSamples={samples} colorCodes={colorCodes} />
+  return (
+    <ItemCardList
+      initialSamples={samples}
+      colorCodes={colorCodes}
+      studios={studios}
+    />
+  )
+}
+
+async function getStudios(): Promise<Studio[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('studios')
+    .select('*')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching studios:', error)
+    return []
+  }
+
+  return data || []
 }

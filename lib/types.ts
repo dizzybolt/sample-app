@@ -74,6 +74,9 @@ export interface SampleEntry {
   sale_price?: number | null
   tag_price?: number | null
   cost_price?: number | null
+
+  studio_id?: string | null
+  studio_name?: string | null
 }
 
 export interface ColorCode {
@@ -161,5 +164,28 @@ export interface InboundSizeQuantity {
 
   created_at?: string | null
 
+  updated_at?: string | null
+}
+
+export interface Studio {
+  id: string
+  name: string
+  manager_name?: string | null
+  phone?: string | null
+  memo?: string | null
+  sort_order?: number | null
+  is_active?: boolean | null
+  created_at?: string | null
+}
+
+export interface PrintHeader {
+  id: string
+  type: 'order' | 'inbound'
+  title?: string | null
+  subtitle?: string | null
+  company_name?: string | null
+  company_info?: string | null
+  footer_memo?: string | null
+  created_at?: string | null
   updated_at?: string | null
 }

@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useMemo, useState } from 'react'
 import { Search, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { ColorCode, ItemCardStatus, SampleEntry } from '@/lib/types'
+import type { ColorCode, ItemCardStatus, SampleEntry, Studio } from '@/lib/types'
 import { groupSamplesByChinaCode } from '@/lib/order-utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,7 @@ import {
 interface ItemCardListProps {
   initialSamples: SampleEntry[]
   colorCodes: ColorCode[]
+  studios: Studio[]
 }
 
 type UserActionStatus = '촬영중' | '촬영완료' | '작업중' | '작업완료'
@@ -79,11 +80,12 @@ function getRepresentativeColor(sample: SampleEntry) {
   return sample.color_name || sample.color_code || '-'
 }
 
-export function ItemCardList({ initialSamples }: ItemCardListProps) {
+export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [savingChinaCode, setSavingChinaCode] = useState<string | null>(null)
+  const [studioFilter, setStudioFilter] = useState<string>('all')
 
   const filteredSamples = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase()
@@ -104,9 +106,13 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
         itemStatus === statusFilter ||
         (statusFilter === '촬영완료' && itemStatus === '작업대기')
 
-      return matchesSearch && matchesStatus
+      const matchesStudio =
+        studioFilter === 'all' ||
+        sample.studio_id === studioFilter
+
+      return matchesSearch && matchesStatus && matchesStudio
     })
-  }, [samples, searchTerm, statusFilter])
+  }, [samples, searchTerm, statusFilter, studioFilter])
 
   const groupedSamples = useMemo(() => {
     return groupSamplesByChinaCode(filteredSamples)
@@ -170,6 +176,49 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
 
     setSavingChinaCode(null)
   }
+
+  const handleChangeStudio = async (
+  chinaCode: string,
+  ids: string[],
+  studioId: string | null
+) => {
+  setSavingChinaCode(chinaCode)
+
+  const selectedStudio = studios.find(
+    (studio) => studio.id === studioId
+  )
+
+  const payload = {
+    studio_id: studioId,
+    studio_name: selectedStudio?.name || null,
+  }
+
+  const supabase = createClient()
+
+  const { error } = await supabase
+    .from('sample_entries')
+    .update(payload)
+    .in('id', ids)
+
+  if (error) {
+    setSavingChinaCode(null)
+    alert('스튜디오 저장에 실패했습니다.')
+    return
+  }
+
+  setSamples((prev) =>
+    prev.map((sample) =>
+      ids.includes(sample.id)
+        ? {
+            ...sample,
+            ...payload,
+          }
+        : sample
+    )
+  )
+
+  setSavingChinaCode(null)
+}
 
   const handleSaveProductInfo = async (
     chinaCode: string,
@@ -244,6 +293,32 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
               />
             </div>
 
+            <div className="w-full lg:w-48">
+              <Select
+                value={studioFilter}
+                onValueChange={setStudioFilter}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="스튜디오 필터" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="all">
+                    전체 스튜디오
+                  </SelectItem>
+
+                  {studios.map((studio) => (
+                    <SelectItem
+                      key={studio.id}
+                      value={studio.id}
+                    >
+                      {studio.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 variant={statusFilter === 'all' ? 'default' : 'outline'}
@@ -295,36 +370,78 @@ export function ItemCardList({ initialSamples }: ItemCardListProps) {
                   className="overflow-hidden rounded-2xl"
                 >
                   <CardContent className="space-y-4 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs text-gray-500">현재상태</p>
-                        <Badge variant="outline">{groupStatus}</Badge>
-                      </div>
+                  <div className="grid grid-cols-3 items-start gap-3 text-center">
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-gray-500">
+                        현재상태
+                      </p>
 
-                      <div className="w-36">
-                        <Select
-                          disabled={isSaving}
-                          onValueChange={(value) =>
-                            handleChangeStatus(
-                              group.china_code,
-                              ids,
-                              value as UserActionStatus
-                            )
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="상태 변경" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ACTION_STATUS_OPTIONS.map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      <p className="truncate text-lg font-bold text-gray-900">
+                        {groupStatus}
+                      </p>
                     </div>
+
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-gray-500">
+                        스튜디오
+                      </p>
+
+                      <Select
+                        disabled={isSaving}
+                        value={representative.studio_id || 'none'}
+                        onValueChange={(value) =>
+                          handleChangeStudio(
+                            group.china_code,
+                            ids,
+                            value === 'none' ? null : value
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-10 w-full justify-center text-center text-sm font-semibold text-gray-900">
+                          <SelectValue placeholder="스튜디오" />
+                        </SelectTrigger>
+
+                        <SelectContent>
+                          <SelectItem value="none">미지정</SelectItem>
+
+                          {studios.map((studio) => (
+                            <SelectItem key={studio.id} value={studio.id}>
+                              {studio.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-gray-500">
+                        상태 변경
+                      </p>
+
+                      <Select
+                        disabled={isSaving}
+                        onValueChange={(value) =>
+                          handleChangeStatus(
+                            group.china_code,
+                            ids,
+                            value as UserActionStatus
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-10 w-full justify-center text-center text-sm font-semibold text-gray-900">
+                          <SelectValue placeholder="변경" />
+                        </SelectTrigger>
+
+                        <SelectContent>
+                          {ACTION_STATUS_OPTIONS.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {status}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
                     <div className="relative aspect-[5/3] overflow-hidden rounded-2xl bg-gray-50">
                       {representative.image_url ? (
