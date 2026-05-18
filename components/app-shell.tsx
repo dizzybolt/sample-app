@@ -23,9 +23,9 @@ const workNavItems = [
   { title: '홈', href: '/', icon: Home },
   { title: '대시보드', href: '/dashboard', icon: BarChart3 },
   { title: '샘플관리', href: '/samples', icon: ClipboardList },
-  { title: '아이템카드', href: '/item-cards', icon: IdCard },
   { title: '발주관리', href: '/orders', icon: FileText },
   { title: '입고관리', href: '/inbound', icon: PackageCheck },
+  { title: '아이템카드', href: '/item-cards', icon: IdCard },
 ]
 
 const adminNavItems = [
