@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface ItemCardListProps {
   initialSamples: SampleEntry[]
@@ -505,21 +506,28 @@ if (searchField === 'product_name') {
                     </div>
                   </div>
 
-                    <div className="relative aspect-[5/3] overflow-hidden rounded-2xl bg-gray-50">
-                      {displayRepresentative.image_url ? (
-                        <Image
-                          src={displayRepresentative.image_url}
-                          alt={displayRepresentative.china_code}
-                          fill
-                          className="object-contain p-3"
-                          sizes="420px"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                          이미지 없음
-                        </div>
-                      )}
-                    </div>
+                  <div className="relative">
+                    <ImagePreviewDialog
+                      src={displayRepresentative.image_url}
+                      alt={`${displayRepresentative.china_code} ${displayRepresentative.color_name || ''}`}
+                    >
+                      <div className="relative aspect-[5/3] overflow-hidden rounded-2xl bg-gray-50">
+                        {displayRepresentative.image_url ? (
+                          <Image
+                            src={displayRepresentative.image_url}
+                            alt={displayRepresentative.china_code}
+                            fill
+                            className="object-contain p-3"
+                            sizes="420px"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                            이미지 없음
+                          </div>
+                        )}
+                      </div>
+                    </ImagePreviewDialog>
+                  </div>
 
                     <form
                       className="space-y-3"

@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
+
 interface SampleCardProps {
   group: SampleGroup
   onEdit: (sample: SampleEntry) => void
@@ -88,6 +89,7 @@ export function SampleCard({ group, onEdit, onDelete }: SampleCardProps) {
           }}
           className="block w-full text-left"
         >
+
           <div className="relative aspect-[5/3] w-full bg-gray-50 sm:aspect-[4/3]">
             {representative.image_url ? (
               <Image
@@ -103,6 +105,7 @@ export function SampleCard({ group, onEdit, onDelete }: SampleCardProps) {
               </div>
             )}
           </div>
+          
 
           <CardContent className="p-4">
             <div className="grid grid-cols-2 gap-x-6 gap-y-3">

@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useMemo, useState } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { Pencil, Plus, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ColorCode, SampleEntry, SampleStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface SampleDateListProps {
   initialSamples: SampleEntry[]
@@ -238,29 +239,41 @@ export function SampleDateList({
                         key={`${date}-${chinaCode}`}
                         className="min-w-[210px] max-w-[210px] overflow-hidden rounded-2xl border bg-white"
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingSample(representative)
-                            setIsFormOpen(true)
-                          }}
-                          className="block w-full text-left"
-                        >
-                          <div className="relative aspect-[4/3] bg-gray-50">
-                            {representative.image_url ? (
-                              <Image
-                                src={representative.image_url}
-                                alt={chinaCode}
-                                fill
-                                className="object-contain p-2"
-                                sizes="210px"
-                              />
-                            ) : (
-                              <div className="flex h-full items-center justify-center text-xs text-gray-400">
-                                이미지 없음
-                              </div>
-                            )}
-                          </div>
+                        <div className="block w-full text-left">
+                            <div className="relative">
+                              <ImagePreviewDialog
+                                  src={representative.image_url}
+                                  alt={`${chinaCode} ${representative.color_name || ''}`}
+                                >
+                                  <div className="relative aspect-[4/3] bg-gray-50">
+                                    {representative.image_url ? (
+                                      <Image
+                                        src={representative.image_url}
+                                        alt={chinaCode}
+                                        fill
+                                        className="object-contain p-2"
+                                        sizes="210px"
+                                      />
+                                    ) : (
+                                      <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                                        이미지 없음
+                                      </div>
+                                    )}
+                                  </div>
+                                </ImagePreviewDialog>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSample(representative)
+                                    setIsFormOpen(true)
+                                  }}
+                                  className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-gray-200 hover:bg-gray-50"
+                                  aria-label="샘플 수정"
+                                >
+                                  <Pencil className="h-4 w-4 text-gray-700" />
+                                </button>
+                            </div>
 
                           <div className="space-y-2 p-3">
                             <div className="flex items-start justify-between gap-2">
@@ -309,7 +322,7 @@ export function SampleDateList({
                               </div>
                             </div>
                           </div>
-                        </button>
+                        </div>
 
                         <div className="p-3 pt-2">
                           <div className="px-3 pt-1">
