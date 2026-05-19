@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 
 interface OrderSheetClientProps {
   date: string
@@ -689,21 +690,26 @@ const saveExtraRows = async () => {
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 {samples.map((sample) => (
                   <div key={sample.id} className="print-image-item space-y-2">
-                    <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100">
-                      {sample.image_url ? (
-                        <Image
-                          src={sample.image_url}
-                          alt={sample.china_code}
-                          fill
-                          className="object-contain p-2"
-                          sizes="180px"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-gray-400">
-                          이미지 없음
-                        </div>
-                      )}
-                    </div>
+                    <ImagePreviewDialog
+                      src={sample.image_url}
+                      alt={`${sample.china_code} ${sample.color_name || ''}`}
+                    >
+                      <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100">
+                        {sample.image_url ? (
+                          <Image
+                            src={sample.image_url}
+                            alt={sample.china_code}
+                            fill
+                            className="object-contain p-2"
+                            sizes="180px"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                            이미지 없음
+                          </div>
+                        )}
+                      </div>
+                    </ImagePreviewDialog>
 
                     <div className="text-xs">
                       <p className="font-semibold text-red-500">
