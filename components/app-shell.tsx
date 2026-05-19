@@ -15,6 +15,7 @@ import {
   Ruler,
   X,
   BookOpen,
+  Palette,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -30,6 +31,7 @@ const workNavItems = [
 ]
 
 const adminNavItems = [
+  { title: '컬러표', href: '/color-codes', icon: Palette },
   { title: '사이즈표', href: '/size-groups', icon: Ruler },
   { title: '스튜디오', href: '/studios', icon: Camera },
   { title: '출력 헤더 관리', href: '/print-headers', icon: FileCog },
