@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import * as XLSX from 'xlsx'
+import { Download } from 'lucide-react'
 
 interface InboundSheetClientProps {
   date: string
@@ -115,6 +117,59 @@ export function InboundSheetClient({
       columnHeaders.find((item) => item.column_key === key)?.column_label ||
       fallback
     )
+  }
+
+  const exportInboundExcel = () => {
+    const rows = samples.map((sample) => {
+      const row: Record<string, string | number> = {
+        중국품번: sample.china_code || '',
+        한국품번: sample.korea_code || '',
+        색상코드: sample.color_code || '',
+        색상명: sample.color_name || '',
+      }
+
+      sizeLabels.forEach((size) => {
+        row[size] = getReceivedQty(sample.id, size)
+      })
+
+      row.입고합계 = getReceivedTotal(sample.id)
+      row.입고상태 = sample.inbound_status || ''
+      row.비고 = sample.note || ''
+      row.이미지URL = sample.image_url || ''
+
+      return row
+    })
+
+    const extraRowsForExcel = extraRows.map((row) => {
+      const excelRow: Record<string, string | number> = {
+        중국품번: chinaCode,
+        한국품번: row.korea_code || '',
+        색상코드: row.color_code || '',
+        색상명: row.color_name || '',
+      }
+
+      sizeLabels.forEach((size) => {
+        excelRow[size] = Number(
+          row.inbound_size_quantities?.[size] ??
+            row.size_quantities?.[size] ??
+            0
+        )
+      })
+
+      excelRow.입고합계 = getExtraReceivedTotal(row)
+      excelRow.입고상태 = '추가행'
+      excelRow.비고 = row.memo || ''
+      excelRow.이미지URL = row.image_url || ''
+
+      return excelRow
+    })
+
+    const worksheet = XLSX.utils.json_to_sheet([...rows, ...extraRowsForExcel])
+    const workbook = XLSX.utils.book_new()
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, '입고확인서')
+
+    XLSX.writeFile(workbook, `입고확인서_${inboundDate || date}_${chinaCode}.xlsx`)
   }
 
   const getExpectedQty = (sampleId: string, sizeLabel: string) => {
@@ -500,7 +555,7 @@ export function InboundSheetClient({
                 </p>
               )}
 
-              <p className="mt-2 text-gray-500">입고기준일</p>
+              <p className="mt-2 text-gray-500">입고예정일</p>
               <p className="font-semibold">{inboundDate || '-'}</p>
             </div>
           </div>
@@ -521,6 +576,11 @@ export function InboundSheetClient({
                 입고관리
               </Button>
             </Link>
+
+            <Button variant="outline" onClick={exportInboundExcel}>
+              <Download className="mr-2 h-4 w-4" />
+              엑셀 다운로드
+            </Button>
 
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
@@ -555,7 +615,7 @@ export function InboundSheetClient({
               </div>
 
               <div>
-                <p className="text-xs text-gray-500">입고기준일</p>
+                <p className="text-xs text-gray-500">입고예정일</p>
                 <input
                   type="date"
                   value={inboundDate}

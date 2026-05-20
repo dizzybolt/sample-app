@@ -207,9 +207,10 @@ export interface OrderExtraRow {
   color_code?: string | null
   color_name?: string | null
   memo?: string | null
+  image_url?: string | null
   sort_order?: number | null
-  created_at?: string | null
-  updated_at?: string | null
   size_quantities?: Record<string, number> | null
   inbound_size_quantities?: Record<string, number> | null
+  created_at?: string | null
+  updated_at?: string | null
 }

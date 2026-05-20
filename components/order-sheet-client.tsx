@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import * as XLSX from 'xlsx'
+import { Download } from 'lucide-react'
 
 interface OrderSheetClientProps {
   date: string
@@ -68,6 +70,55 @@ export function OrderSheetClient({
     fallback
   )
 }
+
+  const exportOrderExcel = () => {
+    const rows = samples.map((sample) => {
+      const row: Record<string, string | number> = {
+        중국품번: sample.china_code || '',
+        한국품번: sample.korea_code || '',
+        색상코드: sample.color_code || '',
+        색상명: sample.color_name || '',
+      }
+
+      sizeLabels.forEach((size) => {
+        row[size] = getQty(sample.id, size)
+      })
+
+      row.합계 = getSampleTotal(sample.id)
+      row.상태 = sample.order_status || ''
+      row.비고 = sample.note || ''
+      row.이미지URL = sample.image_url || ''
+
+      return row
+    })
+
+    const extraRowsForExcel = extraRows.map((row) => {
+      const excelRow: Record<string, string | number> = {
+        중국품번: chinaCode,
+        한국품번: row.korea_code || '',
+        색상코드: row.color_code || '',
+        색상명: row.color_name || '',
+      }
+
+      sizeLabels.forEach((size) => {
+        excelRow[size] = Number(row.size_quantities?.[size] || 0)
+      })
+
+      excelRow.합계 = getExtraTotal(row)
+      excelRow.상태 = '추가행'
+      excelRow.비고 = row.memo || ''
+      excelRow.이미지URL = row.image_url || ''
+
+      return excelRow
+    })
+
+    const worksheet = XLSX.utils.json_to_sheet([...rows, ...extraRowsForExcel])
+    const workbook = XLSX.utils.book_new()
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, '발주서')
+
+    XLSX.writeFile(workbook, `발주서_${date}_${chinaCode}.xlsx`)
+  }
 
   const getQty = (sampleId: string, sizeLabel: string) => {
     const found = quantities.find(
@@ -397,6 +448,11 @@ const saveExtraRows = async () => {
                 발주관리
               </Button>
             </Link>
+
+            <Button variant="outline" onClick={exportOrderExcel}>
+              <Download className="mr-2 h-4 w-4" />
+              엑셀 다운로드
+            </Button>
 
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
