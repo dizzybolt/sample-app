@@ -59,6 +59,8 @@ export function OrderSheetClient({
 
   const representative = samples[0]
   const [extraRows, setExtraRows] = useState<OrderExtraRow[]>(initialExtraRows)
+  const appendixRepresentative = samples[0]
+  const appendixOtherSamples = samples.slice(1)
 
   const getColumnLabel = (key: string, fallback: string) => {
   return (
@@ -681,46 +683,80 @@ const saveExtraRows = async () => {
         </div>
 
         <Card className="print-image-appendix">
-          <CardContent className="space-y-4 p-5">
+          <CardContent className="space-y-5 p-5">
             <h2 className="font-semibold text-gray-900">이미지 별첨</h2>
 
             {samples.length === 0 ? (
               <p className="text-sm text-gray-500">표시할 샘플이 없습니다.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {samples.map((sample) => (
-                  <div key={sample.id} className="print-image-item space-y-2">
-                    <ImagePreviewDialog
-                      src={sample.image_url}
-                      alt={`${sample.china_code} ${sample.color_name || ''}`}
-                    >
-                      <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100">
-                        {sample.image_url ? (
-                          <Image
-                            src={sample.image_url}
-                            alt={sample.china_code}
-                            fill
-                            className="object-contain p-2"
-                            sizes="180px"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-xs text-gray-400">
-                            이미지 없음
-                          </div>
-                        )}
-                      </div>
-                    </ImagePreviewDialog>
-
-                    <div className="text-xs">
-                      <p className="font-semibold text-red-500">
-                        {sample.color_code || '-'}
-                      </p>
-                      <p className="truncate text-gray-500">
-                        {sample.color_name || '-'}
-                      </p>
+              <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+                <div className="print-image-item space-y-3">
+                  <ImagePreviewDialog
+                    src={appendixRepresentative?.image_url}
+                    alt={`${appendixRepresentative?.china_code || ''} ${
+                      appendixRepresentative?.color_name || ''
+                    }`}
+                  >
+                    <div className="relative aspect-square overflow-hidden rounded-[28px] bg-gray-100 p-5">
+                      {appendixRepresentative?.image_url ? (
+                        <Image
+                          src={appendixRepresentative.image_url}
+                          alt={appendixRepresentative.china_code || ''}
+                          fill
+                          className="object-contain p-5"
+                          sizes="520px"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                          이미지 없음
+                        </div>
+                      )}
                     </div>
+                  </ImagePreviewDialog>
+
+                  <div className="text-sm">
+                    <p className="font-bold text-red-500">
+                      {appendixRepresentative?.color_code || '-'}
+                    </p>
+                    <p className="text-gray-500">
+                      {appendixRepresentative?.color_name || '-'}
+                    </p>
                   </div>
-                ))}
+                </div>
+
+                <div className="grid content-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {appendixOtherSamples.map((sample) => (
+                    <div key={sample.id} className="print-image-item space-y-2">
+                      <ImagePreviewDialog
+                        src={sample.image_url}
+                        alt={`${sample.china_code || ''} ${sample.color_name || ''}`}
+                      >
+                        <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100 p-2">
+                          {sample.image_url ? (
+                            <Image
+                              src={sample.image_url}
+                              alt={sample.china_code || ''}
+                              fill
+                              className="object-contain p-2"
+                              sizes="180px"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                              이미지 없음
+                            </div>
+                          )}
+                        </div>
+                      </ImagePreviewDialog>
+
+                      <div className="text-xs">
+                        <p className="font-bold text-red-500">
+                          {sample.color_code || '-'}
+                        </p>
+                        <p className="text-gray-500">{sample.color_name || '-'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </CardContent>
