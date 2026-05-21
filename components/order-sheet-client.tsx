@@ -1032,9 +1032,6 @@ const uploadOrderRequestImage = async (
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-gray-900">비고</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  샘플별 비고와 추가 행 비고를 확인합니다.
-                </p>
               </div>
 
               <button
@@ -1042,7 +1039,7 @@ const uploadOrderRequestImage = async (
                 onClick={() => setShowSampleNotes(false)}
                 className="no-print rounded-md border bg-gray-900 px-3 py-1.5 text-sm font-medium text-white"
               >
-                샘플별 비고 OFF
+                샘플 비고 OFF
               </button>
             </div>
 
@@ -1110,9 +1107,6 @@ const uploadOrderRequestImage = async (
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-gray-900">발주 요청사항</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  이미지와 요청사항을 행 단위로 추가할 수 있습니다.
-                </p>
               </div>
 
               <div className="no-print flex gap-2">
@@ -1122,7 +1116,7 @@ const uploadOrderRequestImage = async (
                   variant="outline"
                   onClick={() => setShowSampleNotes(true)}
                 >
-                  샘플별 비고 ON
+                  샘플 비고 ON
                 </Button>
               )}
                 <Button type="button" variant="outline" onClick={addOrderRequestItem}>
