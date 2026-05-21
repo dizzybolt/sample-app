@@ -24,6 +24,7 @@ interface ItemCardListProps {
   colorCodes: ColorCode[]
   studios: Studio[]
 }
+import { formatNumber } from '@/lib/format'
 
 type UserActionStatus = '촬영중' | '촬영완료' | '작업중' | '작업완료'
 
@@ -58,8 +59,9 @@ function formatPrice(value?: number | null) {
 }
 
 function displayPrice(value?: number | null) {
+  console.log(typeof value, value)
   if (value === null || value === undefined) return '-'
-  return `${Number(value).toLocaleString()}원`
+  return `${formatNumber(value)}원`
 }
 
 function getGroupStatus(items: SampleEntry[]) {
@@ -262,15 +264,21 @@ if (searchField === 'product_name') {
       sale_price:
         String(formData.get('sale_price') || '') === ''
           ? null
-          : Number(formData.get('sale_price')),
+          : Number(
+              String(formData.get('sale_price')).replace(/,/g, '')
+            ),
       tag_price:
         String(formData.get('tag_price') || '') === ''
           ? null
-          : Number(formData.get('tag_price')),
+          : Number(
+              String(formData.get('tag_price')).replace(/,/g, '')
+            ),
       cost_price:
         String(formData.get('cost_price') || '') === ''
           ? null
-          : Number(formData.get('cost_price')),
+          : Number(
+              String(formData.get('cost_price')).replace(/,/g, '')
+            ),
       shoot_image_url:
         String(formData.get('shoot_image_url') || '').trim() || null,          
     }
@@ -591,32 +599,41 @@ if (searchField === 'product_name') {
                       <div className="grid grid-cols-3 gap-2">
                         <div className="space-y-2">
                           <label className="text-xs text-gray-500">판매가</label>
-                          <Input
-                            name="sale_price"
-                            type="number"
-                            defaultValue={formatPrice(representative.sale_price)}
-                            placeholder="판매가"
-                          />
+                            <Input
+                              name="sale_price"
+                              defaultValue={
+                                representative.sale_price == null
+                                  ? ''
+                                  : formatNumber(representative.sale_price)
+                              }
+                              placeholder="판매가"
+                            />
                         </div>
 
                         <div className="space-y-2">
                           <label className="text-xs text-gray-500">TAG가</label>
-                          <Input
-                            name="tag_price"
-                            type="number"
-                            defaultValue={formatPrice(representative.tag_price)}
-                            placeholder="TAG가"
-                          />
+                            <Input
+                              name="tag_price"
+                              defaultValue={
+                                representative.tag_price == null
+                                  ? ''
+                                  : formatNumber(representative.tag_price)
+                              }
+                              placeholder="TAG가"
+                            />
                         </div>
 
                         <div className="space-y-2">
                           <label className="text-xs text-gray-500">원가</label>
-                          <Input
-                            name="cost_price"
-                            type="number"
-                            defaultValue={formatPrice(representative.cost_price)}
-                            placeholder="원가"
-                          />
+                            <Input
+                              name="cost_price"
+                              defaultValue={
+                                representative.cost_price == null
+                                  ? ''
+                                  : formatNumber(representative.cost_price)
+                              }
+                              placeholder="원가"
+                            />
                         </div>
                       </div>
 

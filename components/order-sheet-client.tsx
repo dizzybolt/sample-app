@@ -19,6 +19,7 @@ import {
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import { Download } from 'lucide-react'
+import { formatNumber } from '@/lib/format'
 
 interface OrderSheetClientProps {
   date: string
@@ -537,7 +538,7 @@ const saveExtraRows = async () => {
 
               <div>
                 <p className="text-xs text-gray-500">총 발주수량</p>
-                <p className="font-semibold">{totalOrderQty}개</p>
+                <p className="font-semibold">{formatNumber(totalOrderQty)}개</p>
               </div>
               <div className="no-print">
                 <p className="text-xs text-gray-500">사이즈 구분</p>
@@ -628,7 +629,7 @@ const saveExtraRows = async () => {
                       ))}
 
                       <td className="border px-3 py-2 text-center font-semibold">
-                        {getSampleTotal(sample.id)}
+                        {formatNumber(getSampleTotal(sample.id))}
                       </td>
 
                       <td className="border px-3 py-2 text-center">
@@ -696,7 +697,7 @@ const saveExtraRows = async () => {
                         ))}
 
                         <td className="border px-3 py-2 text-center font-semibold">
-                          {getExtraTotal(row)}
+                          {formatNumber(getExtraTotal(row))}
                         </td>
 
                         <td className="border px-2 py-2 text-center">
@@ -722,7 +723,7 @@ const saveExtraRows = async () => {
                       합계
                     </td>
                     <td className="border px-3 py-2 text-center">
-                      {totalOrderQty}
+                      {formatNumber(totalOrderQty)}
                     </td>
                     <td className="border px-3 py-2" />
                   </tr>

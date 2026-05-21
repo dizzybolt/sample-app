@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import { Download } from 'lucide-react'
+import { formatNumber } from '@/lib/format'
 
 interface InboundSheetClientProps {
   date: string
@@ -638,12 +639,12 @@ export function InboundSheetClient({
 
               <div>
                 <p className="text-xs text-gray-500">입고예정수량</p>
-                <p className="font-semibold">{totalExpectedQty}개</p>
+                <p className="font-semibold">{formatNumber(totalExpectedQty)}개</p>
               </div>
 
               <div>
                 <p className="text-xs text-gray-500">실제입고수량</p>
-                <p className="font-semibold">{totalReceivedQty}개</p>
+                <p className="font-semibold">{formatNumber(totalReceivedQty)}개</p>
               </div>
             </div>
           </CardContent>
@@ -712,7 +713,7 @@ export function InboundSheetClient({
                       ))}
 
                       <td className="border px-3 py-2 font-semibold">
-                        {getReceivedTotal(sample.id)}
+                        {formatNumber(getReceivedTotal(sample.id))}
                       </td>
 
                       <td className="border px-3 py-2">
@@ -749,7 +750,7 @@ export function InboundSheetClient({
                       ))}
 
                       <td className="border px-3 py-2 font-semibold">
-                        {getExtraReceivedTotal(row)}
+                        {formatNumber(getExtraReceivedTotal(row))}
                       </td>
 
                       <td className="border px-3 py-2">추가</td>
@@ -766,7 +767,7 @@ export function InboundSheetClient({
                       합계
                     </td>
                     <td className="border px-3 py-2 text-center">
-                      {totalReceivedQty}
+                      {formatNumber(totalReceivedQty)}
                     </td>
                     <td className="border px-3 py-2" />
                   </tr>

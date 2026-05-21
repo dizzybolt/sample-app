@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { formatNumber } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -375,7 +376,7 @@ export default async function DashboardPage() {
                       <div>
                         <p className="text-sm text-gray-500">{card.title}</p>
                         <p className="mt-2 text-3xl font-bold text-gray-900">
-                          {card.value}
+                          {formatNumber(card.value)}
                         </p>
                       </div>
 
@@ -475,26 +476,26 @@ export default async function DashboardPage() {
                         <p className="font-semibold text-gray-900">
                           {studio.name}
                         </p>
-                        <Badge variant="outline">{studio.total}건</Badge>
+                        <Badge variant="outline">{formatNumber(studio.total)}건</Badge>
                       </div>
 
                       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                         <div className="rounded-lg bg-gray-50 p-2">
                           <p className="text-gray-500">촬영대기</p>
                           <p className="mt-1 font-bold text-gray-900">
-                            {studio.shootingWaiting}
+                            {formatNumber(studio.shootingWaiting)}
                           </p>
                         </div>
                         <div className="rounded-lg bg-gray-50 p-2">
                           <p className="text-gray-500">촬영중</p>
                           <p className="mt-1 font-bold text-gray-900">
-                            {studio.shooting}
+                            {formatNumber(studio.shooting)}
                           </p>
                         </div>
                         <div className="rounded-lg bg-gray-50 p-2">
                           <p className="text-gray-500">작업중</p>
                           <p className="mt-1 font-bold text-gray-900">
-                            {studio.working}
+                            {formatNumber(studio.working)}
                           </p>
                         </div>
                       </div>
@@ -517,7 +518,7 @@ export default async function DashboardPage() {
                 <CardContent className="p-4 text-center">
                   <p className="text-xs text-gray-500">{card.title}</p>
                   <p className="mt-2 text-2xl font-bold text-gray-900">
-                    {card.value}
+                    {formatNumber(card.value)}
                   </p>
                 </CardContent>
               </Card>
@@ -561,7 +562,7 @@ export default async function DashboardPage() {
                       {item.chinaCode}
                     </p>
                     <p className="mt-1 text-sm text-gray-500">
-                      컬러 {item.colorCount}개 ·{' '}
+                      컬러 {formatNumber(item.colorCount)}개 ·{' '}
                       {item.representative.sample_status ||
                         item.representative.status ||
                         '-'}
