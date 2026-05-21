@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { formatNumber } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -199,7 +200,7 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
                                 색상/옵션 {items.length}개
                               </p>
                               <p className="mt-1 text-sm text-gray-500">
-                                입고예정수량 {totalQty}개
+                                입고예정수량 {formatNumber(totalQty)}개
                               </p>
                               <p className="mt-2 text-xs text-gray-400">
                                 클릭하면 입고 상세로 이동

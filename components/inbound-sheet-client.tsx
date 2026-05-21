@@ -701,12 +701,17 @@ export function InboundSheetClient({
                       {sizeLabels.map((size) => (
                         <td key={size} className="border px-2 py-2">
                           <input
-                            type="number"
-                            min={0}
-                            value={getReceivedQty(sample.id, size)}
-                            onChange={(e) =>
-                              updateReceivedQty(sample, size, e.target.value)
-                            }
+                            inputMode="numeric"
+                            value={formatNumber(getReceivedQty(sample.id, size))}
+                            onChange={(e) => {
+                              const rawValue = e.target.value.replace(/,/g, '')
+
+                              updateReceivedQty(
+                                sample,
+                                size,
+                                rawValue === '' ? '0' : rawValue
+                              )
+                            }}
                             className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
                           />
                         </td>
@@ -738,12 +743,17 @@ export function InboundSheetClient({
                       {sizeLabels.map((size) => (
                         <td key={size} className="border px-2 py-2">
                           <input
-                            type="number"
-                            min={0}
-                            value={getExtraReceivedQty(row, size)}
-                            onChange={(e) =>
-                              updateExtraReceivedQty(row.id, size, e.target.value)
-                            }
+                            inputMode="numeric"
+                            value={formatNumber(getExtraReceivedQty(row, size))}
+                            onChange={(e) => {
+                              const rawValue = e.target.value.replace(/,/g, '')
+
+                              updateExtraReceivedQty(
+                                row.id,
+                                size,
+                                rawValue === '' ? '0' : rawValue
+                              )
+                            }}
                             className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
                           />
                         </td>

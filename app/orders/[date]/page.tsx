@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { formatDateLabel } from '@/lib/order-utils'
 import { Button } from '@/components/ui/button'
+import { formatNumber } from '@/lib/format'
 
 function sumQty(online?: number | null, offline?: number | null) {
   return (online || 0) + (offline || 0)

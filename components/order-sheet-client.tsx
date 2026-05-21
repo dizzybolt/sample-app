@@ -617,12 +617,12 @@ const saveExtraRows = async () => {
                       {sizeLabels.map((size) => (
                         <td key={size} className="border px-2 py-2 text-center">
                           <input
-                            type="number"
-                            min={0}
-                            value={getQty(sample.id, size)}
-                            onChange={(e) =>
+                            inputMode="numeric"
+                            value={formatNumber(getQty(sample.id, size))}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/,/g, '')
                               updateQty(sample, size, e.target.value)
-                            }
+                            }}
                             className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
                           />
                         </td>

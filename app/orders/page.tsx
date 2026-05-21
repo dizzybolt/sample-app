@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { formatNumber } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -166,7 +167,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                                 색상/옵션 {items.length}개
                               </p>
                               <p className="mt-1 text-sm text-gray-500">
-                                발주수량 {totalQty}개
+                                발주수량 {formatNumber(totalQty)}개
                               </p>
                               <p className="mt-2 text-xs text-gray-400">
                                 클릭하면 발주서로 이동
