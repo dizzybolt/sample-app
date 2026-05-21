@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type {
+  InboundBatch,
+  InboundBatchQuantity,
   InboundSizeQuantity,
   OrderExtraRow,
   OrderSizeQuantity,
@@ -155,7 +157,6 @@ async function getOrderExtraRows(
 ): Promise<OrderExtraRow[]> {
   const supabase = await createClient()
 
-  // 1차: 날짜 + 중국품번이 정확히 맞는 추가 행 조회
   const { data, error } = await supabase
     .from('order_extra_rows')
     .select('*')
@@ -169,11 +170,8 @@ async function getOrderExtraRows(
     return []
   }
 
-  if (data && data.length > 0) {
-    return data
-  }
+  if (data && data.length > 0) return data
 
-  // 2차: 날짜가 어긋난 기존 저장 데이터 대비용
   const { data: fallbackData, error: fallbackError } = await supabase
     .from('order_extra_rows')
     .select('*')
@@ -188,6 +186,47 @@ async function getOrderExtraRows(
   }
 
   return fallbackData || []
+}
+
+async function getInboundBatches(
+  date: string,
+  chinaCode: string
+): Promise<InboundBatch[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('inbound_batches')
+    .select('*')
+    .eq('order_date', date)
+    .eq('china_code', chinaCode)
+    .order('batch_no', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching inbound batches:', error)
+    return []
+  }
+
+  return data || []
+}
+
+async function getInboundBatchQuantities(
+  batchIds: string[]
+): Promise<InboundBatchQuantity[]> {
+  if (batchIds.length === 0) return []
+
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('inbound_batch_quantities')
+    .select('*')
+    .in('batch_id', batchIds)
+
+  if (error) {
+    console.error('Error fetching inbound batch quantities:', error)
+    return []
+  }
+
+  return data || []
 }
 
 export default async function InboundSheetPage({
@@ -207,13 +246,19 @@ export default async function InboundSheetPage({
     printHeader,
     columnHeaders,
     orderExtraRows,
+    inboundBatches,
   ] = await Promise.all([
     getOrderSizeQuantities(sampleIds),
     getInboundSizeQuantities(date, sampleIds),
     getPrintHeader(),
     getPrintColumnHeaders(),
     getOrderExtraRows(date, chinaCode),
+    getInboundBatches(date, chinaCode),
   ])
+
+  const inboundBatchQuantities = await getInboundBatchQuantities(
+    inboundBatches.map((batch) => batch.id)
+  )
 
   return (
     <InboundSheetClient
@@ -225,6 +270,8 @@ export default async function InboundSheetPage({
       printHeader={printHeader}
       columnHeaders={columnHeaders}
       orderExtraRows={orderExtraRows}
+      inboundBatches={inboundBatches}
+      inboundBatchQuantities={inboundBatchQuantities}
     />
   )
 }

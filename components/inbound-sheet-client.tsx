@@ -6,6 +6,8 @@ import { useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type {
+  InboundBatch,
+  InboundBatchQuantity,
   InboundSizeQuantity,
   InboundStatus,
   OrderExtraRow,
@@ -31,6 +33,8 @@ interface InboundSheetClientProps {
   printHeader: PrintHeader | null
   columnHeaders: PrintColumnHeader[]
   orderExtraRows: OrderExtraRow[]
+  inboundBatches: InboundBatch[]
+  inboundBatchQuantities: InboundBatchQuantity[]
 }
 
 function getToday() {
@@ -81,6 +85,8 @@ export function InboundSheetClient({
   printHeader,
   columnHeaders,
   orderExtraRows,
+  inboundBatches,
+  inboundBatchQuantities,
 }: InboundSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [inboundQuantities, setInboundQuantities] = useState(
@@ -89,7 +95,30 @@ export function InboundSheetClient({
   const [extraRows, setExtraRows] = useState(orderExtraRows)
   const [isSaving, setIsSaving] = useState(false)
 
+  const [batches, setBatches] = useState<InboundBatch[]>(inboundBatches)
+  const [batchQuantities, setBatchQuantities] =
+    useState<InboundBatchQuantity[]>(inboundBatchQuantities)
+
+  const [selectedBatchId, setSelectedBatchId] = useState(
+    inboundBatches[0]?.id || ''
+  )
+
   const representative = samples[0]
+
+  const selectedBatch = batches.find((batch) => batch.id === selectedBatchId)
+
+  const firstInboundDate =
+    batches
+      .map((batch) => batch.inbound_date)
+      .filter(Boolean)
+      .sort()[0] || '-'
+
+  const latestInboundDate =
+    batches
+      .map((batch) => batch.inbound_date)
+      .filter(Boolean)
+      .sort()
+      .at(-1) || '-'
 
   const [inboundDate, setInboundDate] = useState(
     toKoreaDate(representative?.inbound_at) || ''
@@ -197,6 +226,20 @@ export function InboundSheetClient({
     return getExpectedQty(sampleId, sizeLabel)
   }
 
+  const getBatchReceivedQty = (sampleId: string, sizeLabel: string) => {
+    if (!selectedBatchId) return 0
+
+    const found = batchQuantities.find(
+      (item) =>
+        item.batch_id === selectedBatchId &&
+        item.sample_entry_id === sampleId &&
+        item.size_group_name === sizeGroupName &&
+        item.size_label === sizeLabel
+    )
+
+    return found?.qty || 0
+  }
+
   const updateReceivedQty = (
     sample: SampleEntry,
     sizeLabel: string,
@@ -239,6 +282,112 @@ export function InboundSheetClient({
     })
   }
 
+  const updateBatchReceivedQty = (
+    sample: SampleEntry,
+    sizeLabel: string,
+    value: string
+  ) => {
+    if (!selectedBatchId) {
+      alert('먼저 입고 회차를 추가해 주세요.')
+      return
+    }
+
+    const rawValue = value.replace(/,/g, '')
+    const nextQty = rawValue === '' ? 0 : Number(rawValue)
+
+    setBatchQuantities((prev) => {
+      const exists = prev.find(
+        (item) =>
+          item.batch_id === selectedBatchId &&
+          item.sample_entry_id === sample.id &&
+          item.size_group_name === sizeGroupName &&
+          item.size_label === sizeLabel
+      )
+
+      if (exists) {
+        return prev.map((item) =>
+          item.id === exists.id
+            ? {
+                ...item,
+                qty: nextQty,
+              }
+            : item
+        )
+      }
+
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          batch_id: selectedBatchId,
+          sample_entry_id: sample.id,
+          china_code: sample.china_code,
+          korea_code: sample.korea_code,
+          color_code: sample.color_code,
+          color_name: sample.color_name,
+          size_group_name: sizeGroupName,
+          size_label: sizeLabel,
+          qty: nextQty,
+          is_extra: false,
+        },
+      ]
+    })
+  }
+
+  const updateBatchExtraReceivedQty = (
+    row: OrderExtraRow,
+    sizeLabel: string,
+    value: string
+  ) => {
+    if (!selectedBatchId) {
+      alert('먼저 입고 회차를 추가해 주세요.')
+      return
+    }
+
+    const rawValue = value.replace(/,/g, '')
+    const nextQty = rawValue === '' ? 0 : Number(rawValue)
+
+    setBatchQuantities((prev) => {
+      const exists = prev.find(
+        (item) =>
+          item.batch_id === selectedBatchId &&
+          item.is_extra === true &&
+          item.sample_entry_id === row.id &&
+          item.size_group_name === sizeGroupName &&
+          item.size_label === sizeLabel
+      )
+
+      if (exists) {
+        return prev.map((item) =>
+          item.id === exists.id
+            ? {
+                ...item,
+                qty: nextQty,
+              }
+            : item
+        )
+      }
+
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          batch_id: selectedBatchId,
+          sample_entry_id: row.id,
+          china_code: chinaCode,
+          korea_code: row.korea_code || null,
+          color_code: row.color_code || null,
+          color_name: row.color_name || null,
+          size_group_name: sizeGroupName,
+          size_label: sizeLabel,
+          qty: nextQty,
+          is_extra: true,
+          memo: row.memo || null,
+        },
+      ]
+    })
+  }
+
   const getExpectedTotal = (sampleId: string) => {
     return sizeLabels.reduce(
       (sum, size) => sum + Number(getExpectedQty(sampleId, size) || 0),
@@ -253,6 +402,32 @@ export function InboundSheetClient({
     )
   }
 
+  const getCumulativeReceivedTotal = (sampleId: string) => {
+    return batchQuantities
+      .filter((item) => item.sample_entry_id === sampleId)
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  }
+
+  const getCumulativeExtraReceivedTotal = (row: OrderExtraRow) => {
+    return batchQuantities
+      .filter(
+        (item) =>
+          item.is_extra === true &&
+          item.sample_entry_id === row.id
+      )
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  }
+
+  const totalCumulativeReceivedQty =
+    samples.reduce(
+      (sum, sample) => sum + getCumulativeReceivedTotal(sample.id),
+      0
+    ) +
+    extraRows.reduce(
+      (sum, row) => sum + getCumulativeExtraReceivedTotal(row),
+      0
+    )
+
   const getExtraExpectedQty = (row: OrderExtraRow, size: string) => {
     return Number(row.size_quantities?.[size] || 0)
   }
@@ -264,6 +439,21 @@ export function InboundSheetClient({
         0
     )
   }
+
+  const getBatchExtraReceivedQty = (row: OrderExtraRow, sizeLabel: string) => {
+    if (!selectedBatchId) return 0
+
+    const found = batchQuantities.find(
+      (item) =>
+        item.batch_id === selectedBatchId &&
+        item.is_extra === true &&
+        item.sample_entry_id === row.id &&
+        item.size_group_name === sizeGroupName &&
+        item.size_label === sizeLabel
+    )
+
+    return found?.qty || 0
+  }  
 
   const updateExtraReceivedQty = (
     rowId: string,
@@ -351,84 +541,205 @@ export function InboundSheetClient({
     return true
   }
 
-  const handleSaveQty = async () => {
+  const handleAddBatch = async () => {
     setIsSaving(true)
 
     const supabase = createClient()
 
-    for (const sample of samples) {
-      const expectedTotal = getExpectedTotal(sample.id)
-      const receivedTotal = getReceivedTotal(sample.id)
-      const nextStatus = getAutoInboundStatus(expectedTotal, receivedTotal)
+    const nextBatchNo =
+      batches.length === 0
+        ? 1
+        : Math.max(...batches.map((batch) => batch.batch_no || 0)) + 1
 
-      await supabase
-        .from('inbound_size_quantities')
-        .delete()
-        .eq('sample_entry_id', sample.id)
-        .eq('inbound_date', date)
-        .eq('size_group_name', sizeGroupName)
+    const { data, error } = await supabase
+      .from('inbound_batches')
+      .insert({
+        order_date: date,
+        china_code: chinaCode,
+        batch_no: nextBatchNo,
+        inbound_date: inboundDate || getToday(),
+      })
+      .select('*')
+      .single()
 
-      const rows = sizeLabels.map((size) => ({
-        sample_entry_id: sample.id,
-        inbound_date: date,
-        china_code: sample.china_code,
-        color_code: sample.color_code,
-        size_group_name: sizeGroupName,
-        size_label: size,
-        qty: getReceivedQty(sample.id, size),
+    setIsSaving(false)
+
+    if (error) {
+      console.error(error)
+
+      alert(
+        `입고 회차 추가 실패\n\n${error.message}`
+      )
+
+      return
+    }
+
+    setBatches((prev) => [...prev, data])
+    setSelectedBatchId(data.id)
+    setInboundDate(data.inbound_date || getToday())
+  }
+
+  const handleDeleteBatch = async (batchId: string) => {
+    const targetBatch = batches.find((batch) => batch.id === batchId)
+
+    if (!targetBatch) return
+
+    const ok = window.confirm(
+      `${targetBatch.batch_no}차 입고 회차를 삭제할까요?\n저장된 해당 회차 수량도 함께 삭제됩니다.`
+    )
+
+    if (!ok) return
+
+    setIsSaving(true)
+
+    const supabase = createClient()
+
+    const { error } = await supabase
+      .from('inbound_batches')
+      .delete()
+      .eq('id', batchId)
+
+    setIsSaving(false)
+
+    if (error) {
+      alert(`입고 회차 삭제 실패\n\n${error.message}`)
+      return
+    }
+
+    const nextBatches = batches.filter((batch) => batch.id !== batchId)
+
+    setBatches(nextBatches)
+
+    setBatchQuantities((prev) =>
+      prev.filter((item) => item.batch_id !== batchId)
+    )
+
+    const nextSelectedBatch = nextBatches[0]
+
+    setSelectedBatchId(nextSelectedBatch?.id || '')
+    setInboundDate(nextSelectedBatch?.inbound_date || '')
+  }
+
+  const handleSaveQty = async () => {
+    if (!selectedBatchId) {
+      alert('입고 회차를 먼저 추가해 주세요.')
+      return
+    }
+
+    setIsSaving(true)
+
+    const supabase = createClient()
+
+    const selectedBatch = batches.find((batch) => batch.id === selectedBatchId)
+
+    if (!selectedBatch) {
+      setIsSaving(false)
+      alert('선택된 입고 회차를 찾을 수 없습니다.')
+      return
+    }
+
+    const finalInboundDate = inboundDate || getToday()
+
+    const { error: batchUpdateError } = await supabase
+      .from('inbound_batches')
+      .update({
+        inbound_date: finalInboundDate,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', selectedBatchId)
+
+    if (batchUpdateError) {
+      setIsSaving(false)
+      alert('입고 회차 날짜 저장에 실패했습니다.')
+      return
+    }
+
+    await supabase
+      .from('inbound_batch_quantities')
+      .delete()
+      .eq('batch_id', selectedBatchId)
+
+    const rowsToInsert = batchQuantities
+      .filter((item) => item.batch_id === selectedBatchId)
+      .map((item) => ({
+        batch_id: selectedBatchId,
+        sample_entry_id: item.sample_entry_id || null,
+        china_code: item.china_code || chinaCode,
+        korea_code: item.korea_code || null,
+        color_code: item.color_code || null,
+        color_name: item.color_name || null,
+        size_group_name: item.size_group_name || sizeGroupName,
+        size_label: item.size_label || '',
+        qty: Number(item.qty || 0),
+        is_extra: item.is_extra || false,
+        memo: item.memo || null,
       }))
 
-      if (rows.length > 0) {
-        const { error: insertError } = await supabase
-          .from('inbound_size_quantities')
-          .insert(rows)
+    if (rowsToInsert.length > 0) {
+      const { error: insertError } = await supabase
+        .from('inbound_batch_quantities')
+        .insert(rowsToInsert)
 
-        if (insertError) {
-          setIsSaving(false)
-          alert('사이즈별 입고수량 저장에 실패했습니다.')
-          return
-        }
+      if (insertError) {
+        setIsSaving(false)
+        alert('회차별 입고수량 저장에 실패했습니다.')
+        return
       }
+    }
+
+    const updatedBatches = batches.map((batch) =>
+      batch.id === selectedBatchId
+        ? {
+            ...batch,
+            inbound_date: finalInboundDate,
+            updated_at: new Date().toISOString(),
+          }
+        : batch
+    )
+
+    setBatches(updatedBatches)
+
+    for (const sample of samples) {
+      const expectedTotal = getExpectedTotal(sample.id)
+      const cumulativeTotal = getCumulativeReceivedTotal(sample.id)
+      const nextStatus = getAutoInboundStatus(expectedTotal, cumulativeTotal)
 
       const { error: sampleError } = await supabase
         .from('sample_entries')
         .update({
           inbound_expected_qty: expectedTotal,
-          inbound_received_qty: receivedTotal,
+          inbound_received_qty: cumulativeTotal,
           inbound_status: nextStatus,
+          inbound_at: finalInboundDate,
           size_group_name: sizeGroupName,
         })
         .eq('id', sample.id)
 
       if (sampleError) {
         setIsSaving(false)
-        alert('입고수량 합계 저장에 실패했습니다.')
+        alert('누적 입고수량 저장에 실패했습니다.')
         return
       }
     }
 
-    const extraSaved = await saveExtraRows()
-
-    if (!extraSaved) {
-      setIsSaving(false)
-      return
-    }
-
     setSamples((prev) =>
-      prev.map((sample) => ({
-        ...sample,
-        inbound_expected_qty: getExpectedTotal(sample.id),
-        inbound_received_qty: getReceivedTotal(sample.id),
-        inbound_status: getAutoInboundStatus(
-          getExpectedTotal(sample.id),
-          getReceivedTotal(sample.id)
-        ),
-        size_group_name: sizeGroupName,
-      }))
+      prev.map((sample) => {
+        const expectedTotal = getExpectedTotal(sample.id)
+        const cumulativeTotal = getCumulativeReceivedTotal(sample.id)
+
+        return {
+          ...sample,
+          inbound_expected_qty: expectedTotal,
+          inbound_received_qty: cumulativeTotal,
+          inbound_status: getAutoInboundStatus(expectedTotal, cumulativeTotal),
+          inbound_at: finalInboundDate,
+          size_group_name: sizeGroupName,
+        }
+      })
     )
 
     setIsSaving(false)
-    alert('입고수량이 저장되었습니다.')
+    alert(`${selectedBatch.batch_no}차 입고수량이 저장되었습니다.`)
   }
 
   const handleDelay = async () => {
@@ -467,59 +778,14 @@ export function InboundSheetClient({
 
   const handleCompleteInbound = async () => {
     const ok = window.confirm(
-      '입고완료 처리할까요?\n실제입고수량 기준으로 입고상태가 자동 저장됩니다.'
+      '입고완료 처리할까요?\n모든 회차의 누적 입고수량 기준으로 입고상태가 자동 저장됩니다.'
     )
 
     if (!ok) return
 
     await handleSaveQty()
 
-    setIsSaving(true)
-
-    const supabase = createClient()
-    const today = getToday()
-    const finalInboundDate = inboundDate || today
-
-    for (const sample of samples) {
-      const expectedTotal = getExpectedTotal(sample.id)
-      const receivedTotal = getReceivedTotal(sample.id)
-      const nextStatus = getAutoInboundStatus(expectedTotal, receivedTotal)
-
-      const { error } = await supabase
-        .from('sample_entries')
-        .update({
-          inbound_expected_qty: expectedTotal,
-          inbound_received_qty: receivedTotal,
-          inbound_status: nextStatus,
-          inbound_at: finalInboundDate,
-          size_group_name: sizeGroupName,
-        })
-        .eq('id', sample.id)
-
-      if (error) {
-        setIsSaving(false)
-        alert('입고완료 처리에 실패했습니다.')
-        return
-      }
-    }
-
-    setSamples((prev) =>
-      prev.map((sample) => ({
-        ...sample,
-        inbound_expected_qty: getExpectedTotal(sample.id),
-        inbound_received_qty: getReceivedTotal(sample.id),
-        inbound_status: getAutoInboundStatus(
-          getExpectedTotal(sample.id),
-          getReceivedTotal(sample.id)
-        ),
-        inbound_at: finalInboundDate,
-        size_group_name: sizeGroupName,
-      }))
-    )
-
-    setInboundDate(finalInboundDate)
-    setIsSaving(false)
-    alert('입고 처리되었습니다.')
+    alert('입고완료 처리가 완료되었습니다.')
   }
 
   return (
@@ -609,7 +875,7 @@ export function InboundSheetClient({
 
         <Card className="print-break-inside-avoid">
           <CardContent className="space-y-4 p-5">
-            <div className="grid gap-3 sm:grid-cols-6">
+            <div className="grid gap-3 sm:grid-cols-7">
               <div>
                 <p className="text-xs text-gray-500">발주요청일</p>
                 <p className="font-semibold">{orderBaseDate}</p>
@@ -623,6 +889,50 @@ export function InboundSheetClient({
                   onChange={(e) => setInboundDate(e.target.value)}
                   className="mt-1 w-full rounded-md border px-2 py-1 text-sm font-semibold"
                 />
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500">입고회차</p>
+
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {batches.map((batch) => (
+                    <div key={batch.id} className="flex overflow-hidden rounded-md border">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedBatchId(batch.id)
+                          setInboundDate(batch.inbound_date || '')
+                        }}
+                        className={`px-2 py-1 text-xs font-medium ${
+                          selectedBatchId === batch.id
+                            ? 'bg-gray-900 text-white'
+                            : 'bg-white text-gray-700'
+                        }`}
+                      >
+                        {batch.batch_no}차
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBatch(batch.id)}
+                        disabled={isSaving}
+                        className="border-l bg-white px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50"
+                        title="회차 삭제"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={handleAddBatch}
+                    disabled={isSaving}
+                    className="rounded-md border bg-white px-2 py-1 text-xs font-medium text-gray-700"
+                  >
+                    + 회차
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -643,8 +953,20 @@ export function InboundSheetClient({
               </div>
 
               <div>
-                <p className="text-xs text-gray-500">실제입고수량</p>
-                <p className="font-semibold">{formatNumber(totalReceivedQty)}개</p>
+                <p className="text-xs text-gray-500">누적입고수량</p>
+                <p className="font-semibold">
+                  {formatNumber(totalCumulativeReceivedQty)}개
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500">최초입고일</p>
+                <p className="font-semibold">{firstInboundDate}</p>
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500">최근입고일</p>
+                <p className="font-semibold">{latestInboundDate}</p>
               </div>
             </div>
           </CardContent>
@@ -702,15 +1024,9 @@ export function InboundSheetClient({
                         <td key={size} className="border px-2 py-2">
                           <input
                             inputMode="numeric"
-                            value={formatNumber(getReceivedQty(sample.id, size))}
+                            value={formatNumber(getBatchReceivedQty(sample.id, size))}
                             onChange={(e) => {
-                              const rawValue = e.target.value.replace(/,/g, '')
-
-                              updateReceivedQty(
-                                sample,
-                                size,
-                                rawValue === '' ? '0' : rawValue
-                              )
+                              updateBatchReceivedQty(sample, size, e.target.value)
                             }}
                             className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
                           />
@@ -718,7 +1034,12 @@ export function InboundSheetClient({
                       ))}
 
                       <td className="border px-3 py-2 font-semibold">
-                        {formatNumber(getReceivedTotal(sample.id))}
+                        {formatNumber(
+                          sizeLabels.reduce(
+                            (sum, size) => sum + getBatchReceivedQty(sample.id, size),
+                            0
+                          )
+                        )}
                       </td>
 
                       <td className="border px-3 py-2">
@@ -744,23 +1065,23 @@ export function InboundSheetClient({
                         <td key={size} className="border px-2 py-2">
                           <input
                             inputMode="numeric"
-                            value={formatNumber(getExtraReceivedQty(row, size))}
-                            onChange={(e) => {
-                              const rawValue = e.target.value.replace(/,/g, '')
 
-                              updateExtraReceivedQty(
-                                row.id,
-                                size,
-                                rawValue === '' ? '0' : rawValue
-                              )
-                            }}
+                            value={formatNumber(getBatchExtraReceivedQty(row, size))}
+                            onChange={(e) =>
+                              updateBatchExtraReceivedQty(row, size, e.target.value)
+                            }
                             className="mx-auto w-16 rounded-md border px-2 py-1 text-center print:border-0 print:bg-transparent"
                           />
                         </td>
                       ))}
 
                       <td className="border px-3 py-2 font-semibold">
-                        {formatNumber(getExtraReceivedTotal(row))}
+                        {formatNumber(
+                          sizeLabels.reduce(
+                            (sum, size) => sum + getBatchExtraReceivedQty(row, size),
+                            0
+                          )
+                        )}
                       </td>
 
                       <td className="border px-3 py-2">추가</td>

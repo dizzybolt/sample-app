@@ -214,3 +214,30 @@ export interface OrderExtraRow {
   created_at?: string | null
   updated_at?: string | null
 }
+
+export interface InboundBatch {
+  id: string
+  order_date?: string | null
+  china_code?: string | null
+  batch_no: number
+  inbound_date?: string | null
+  memo?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface InboundBatchQuantity {
+  id: string
+  batch_id: string
+  sample_entry_id?: string | null
+  china_code?: string | null
+  korea_code?: string | null
+  color_code?: string | null
+  color_name?: string | null
+  size_group_name?: string | null
+  size_label?: string | null
+  qty?: number | null
+  is_extra?: boolean | null
+  memo?: string | null
+  created_at?: string | null
+}

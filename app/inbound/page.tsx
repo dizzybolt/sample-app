@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
-import type { SampleEntry } from '@/lib/types'
+import type { InboundBatch, InboundBatchQuantity, SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatNumber } from '@/lib/format'
@@ -21,6 +21,39 @@ async function getInboundSamples(): Promise<SampleEntry[]> {
 
   if (error) {
     console.error('Error fetching inbound samples:', error)
+    return []
+  }
+
+  return data || []
+}
+
+async function getInboundBatches(): Promise<InboundBatch[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('inbound_batches')
+    .select('*')
+    .order('order_date', { ascending: false })
+    .order('china_code', { ascending: true })
+    .order('batch_no', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching inbound batches:', error)
+    return []
+  }
+
+  return data || []
+}
+
+async function getInboundBatchQuantities(): Promise<InboundBatchQuantity[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('inbound_batch_quantities')
+    .select('*')
+
+  if (error) {
+    console.error('Error fetching inbound batch quantities:', error)
     return []
   }
 
@@ -61,6 +94,35 @@ function getDateKey(sample: SampleEntry) {
   )
 }
 
+function getFirstInboundDate(batches: InboundBatch[]) {
+  const dates = batches
+    .map((batch) => batch.inbound_date)
+    .filter(Boolean)
+    .sort()
+
+  return dates[0] || '-'
+}
+
+function getLatestInboundDate(batches: InboundBatch[]) {
+  const dates = batches
+    .map((batch) => batch.inbound_date)
+    .filter(Boolean)
+    .sort()
+
+  return dates.at(-1) || '-'
+}
+
+function getCumulativeInboundQty(
+  batches: InboundBatch[],
+  quantities: InboundBatchQuantity[]
+) {
+  const batchIds = batches.map((batch) => batch.id)
+
+  return quantities
+    .filter((qty) => batchIds.includes(qty.batch_id))
+    .reduce((sum, qty) => sum + Number(qty.qty || 0), 0)
+}
+
 function groupByDateAndChinaCode(samples: SampleEntry[]) {
   const dateMap = new Map<string, Map<string, SampleEntry[]>>()
 
@@ -91,7 +153,12 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
   const resolvedSearchParams = await searchParams
   const statusFilter = resolvedSearchParams?.status || 'all'
 
-  const samples = await getInboundSamples()
+  const [samples, inboundBatches, inboundBatchQuantities] =
+    await Promise.all([
+      getInboundSamples(),
+      getInboundBatches(),
+      getInboundBatchQuantities(),
+    ])
 
   const filteredSamples =
     statusFilter === 'all'
@@ -150,21 +217,36 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {Array.from(chinaMap.entries()).map(([chinaCode, items]) => {
-                    const representative = items[0]
-                    const totalQty = items.reduce(
-                      (sum, item) =>
-                        sum +
-                        Number(
-                          item.inbound_expected_qty ||
-                            item.order_qty ||
-                            item.quantity ||
-                            item.qty ||
-                            0
-                        ),
-                      0
-                    )
+                  const representative = items[0]
 
-                    const href = `/inbound/${date}/${encodeURIComponent(chinaCode)}`
+                  const expectedQty = items.reduce(
+                    (sum, item) =>
+                      sum +
+                      Number(
+                        item.inbound_expected_qty ||
+                          item.order_qty ||
+                          item.quantity ||
+                          item.qty ||
+                          0
+                      ),
+                    0
+                  )
+
+                  const relatedBatches = inboundBatches.filter(
+                    (batch) =>
+                      batch.order_date === date &&
+                      batch.china_code === chinaCode
+                  )
+
+                  const cumulativeInboundQty = getCumulativeInboundQty(
+                    relatedBatches,
+                    inboundBatchQuantities
+                  )
+
+                  const firstInboundDate = getFirstInboundDate(relatedBatches)
+                  const latestInboundDate = getLatestInboundDate(relatedBatches)
+
+                  const href = `/inbound/${date}/${encodeURIComponent(chinaCode)}`
 
                     return (
                       <Link key={`${date}-${chinaCode}`} href={href}>
@@ -197,10 +279,41 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
                               </div>
 
                               <p className="mt-1 text-sm text-gray-500">
-                                색상/옵션 {items.length}개
+                                색상/옵션 {formatNumber(items.length)}개
                               </p>
-                              <p className="mt-1 text-sm text-gray-500">
-                                입고예정수량 {formatNumber(totalQty)}개
+
+                              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                                <div className="rounded-lg bg-gray-50 p-2">
+                                  <p className="text-gray-400">입고예정</p>
+                                  <p className="font-semibold text-gray-900">
+                                    {formatNumber(expectedQty)}개
+                                  </p>
+                                </div>
+
+                                <div className="rounded-lg bg-gray-50 p-2">
+                                  <p className="text-gray-400">누적입고</p>
+                                  <p className="font-semibold text-gray-900">
+                                    {formatNumber(cumulativeInboundQty)}개
+                                  </p>
+                                </div>
+
+                                <div className="rounded-lg bg-gray-50 p-2">
+                                  <p className="text-gray-400">최초입고일</p>
+                                  <p className="font-semibold text-gray-900">
+                                    {firstInboundDate}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-lg bg-gray-50 p-2">
+                                  <p className="text-gray-400">최근입고일</p>
+                                  <p className="font-semibold text-gray-900">
+                                    {latestInboundDate}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <p className="mt-2 text-xs text-gray-400">
+                                입고회차 {formatNumber(relatedBatches.length)}회
                               </p>
                               <p className="mt-2 text-xs text-gray-400">
                                 클릭하면 입고 상세로 이동
