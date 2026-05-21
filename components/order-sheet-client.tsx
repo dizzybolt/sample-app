@@ -1145,9 +1145,9 @@ const uploadOrderRequestImage = async (
                   return (
                     <div
                       key={item.id}
-                      className={`grid gap-3 rounded-xl border bg-white p-3 print:break-inside-avoid print:p-2 ${
+                      className={`grid gap-4 rounded-xl border bg-white p-4 print:break-inside-avoid print:p-2 ${
                         hasImage
-                          ? 'lg:grid-cols-[160px_1fr_auto] print:grid-cols-[90px_1fr]'
+                          ? 'lg:grid-cols-[480px_1fr_auto] print:grid-cols-[140px_1fr]'
                           : 'lg:grid-cols-[1fr_auto] print:grid-cols-1'
                       }`}
                     >
@@ -1173,18 +1173,35 @@ const uploadOrderRequestImage = async (
                             }}
                           />
 
-                          <ImagePreviewDialog
-                            src={item.previewUrl || item.request_image_url}
-                            alt={`${chinaCode} 요청사항 ${index + 1}`}
-                          >
-                            <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50 print:h-20 print:w-20 print:rounded-md">
-                              <img
-                                src={item.previewUrl || item.request_image_url || ''}
-                                alt={`${chinaCode} 요청사항 ${index + 1}`}
-                                className="h-full w-full object-contain p-2 print:p-1"
-                              />
-                            </div>
-                          </ImagePreviewDialog>
+                          <div className="relative w-full max-w-[480px]">
+                            <ImagePreviewDialog
+                              src={item.previewUrl || item.request_image_url}
+                              alt={`${chinaCode} 요청사항 ${index + 1}`}
+                            >
+                              <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50 print:h-32 print:w-32 print:rounded-md">
+                                <img
+                                  src={item.previewUrl || item.request_image_url || ''}
+                                  alt={`${chinaCode} 요청사항 ${index + 1}`}
+                                  className="h-full w-full object-contain p-2 print:p-1"
+                                />
+                              </div>
+                            </ImagePreviewDialog>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateOrderRequestItem(item.id, {
+                                  file: null,
+                                  previewUrl: null,
+                                  request_image_url: null,
+                                })
+                              }
+                              className="no-print absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-bold text-red-500 shadow ring-1 ring-gray-200 hover:bg-red-50"
+                              aria-label="요청사항 이미지 제거"
+                            >
+                              ×
+                            </button>
+                          </div>
 
                           <label
                             htmlFor={`order-request-image-${item.id}`}
