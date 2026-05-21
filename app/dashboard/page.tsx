@@ -426,13 +426,15 @@ export default async function DashboardPage() {
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100">
                           {item?.image_url ? (
-                            <Image
-                              src={item.image_url}
-                              alt={item.title || ''}
-                              fill
-                              className="object-contain p-1"
-                              sizes="48px"
-                            />
+                          <Image
+                            src={item.image_url}
+                            alt={item.title || ''}
+                            fill
+                            className="object-contain p-1"
+                            sizes="48px"
+                            quality={45}
+                            loading="lazy"
+                          />
                           ) : null}
                         </div>
 
@@ -552,7 +554,9 @@ export default async function DashboardPage() {
                         alt={item.chinaCode}
                         fill
                         className="object-contain p-2"
-                        sizes="260px"
+                        sizes="180px"
+                        quality={50}
+                        loading="lazy"
                       />
                     ) : null}
                   </div>

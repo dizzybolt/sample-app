@@ -526,7 +526,9 @@ if (searchField === 'product_name') {
                             alt={displayRepresentative.china_code}
                             fill
                             className="object-contain p-3"
-                            sizes="420px"
+                            sizes="360px"
+                            quality={60}
+                            loading="lazy"
                           />
                         ) : (
                           <div className="flex h-full items-center justify-center text-sm text-gray-400">
@@ -699,10 +701,12 @@ if (searchField === 'product_name') {
                             {item.image_url ? (
                               <Image
                                 src={item.image_url}
-                                alt={item.china_code}
+                                alt={item.china_code || ''}
                                 fill
                                 className="object-contain p-1"
                                 sizes="48px"
+                                quality={45}
+                                loading="lazy"
                               />
                             ) : (
                               <div className="flex h-full items-center justify-center text-[10px] text-gray-400">

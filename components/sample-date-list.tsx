@@ -252,7 +252,9 @@ export function SampleDateList({
                                         alt={chinaCode}
                                         fill
                                         className="object-contain p-2"
-                                        sizes="210px"
+                                        sizes="220px"
+                                        quality={55}
+                                        loading="lazy"
                                       />
                                     ) : (
                                       <div className="flex h-full items-center justify-center text-xs text-gray-400">
@@ -344,10 +346,12 @@ export function SampleDateList({
                                   {item.image_url ? (
                                     <Image
                                       src={item.image_url}
-                                      alt={item.china_code}
+                                      alt={item.china_code || ''}
                                       fill
                                       className="object-contain p-1"
                                       sizes="44px"
+                                      quality={45}
+                                      loading="lazy"
                                     />
                                   ) : (
                                     <div className="flex h-full items-center justify-center text-[10px] text-gray-400">

@@ -761,7 +761,9 @@ const saveExtraRows = async () => {
                           alt={appendixRepresentative.china_code || ''}
                           fill
                           className="object-contain p-5"
-                          sizes="520px"
+                          sizes="420px"
+                          quality={60}
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-sm text-gray-400">
@@ -795,7 +797,9 @@ const saveExtraRows = async () => {
                               alt={sample.china_code || ''}
                               fill
                               className="object-contain p-2"
-                              sizes="180px"
+                              sizes="160px"
+                              quality={55}
+                              loading="lazy"
                             />
                           ) : (
                             <div className="flex h-full items-center justify-center text-xs text-gray-400">

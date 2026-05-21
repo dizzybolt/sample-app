@@ -805,10 +805,12 @@ export function InboundSheetClient({
                         {sample.image_url ? (
                           <Image
                             src={sample.image_url}
-                            alt={sample.china_code}
+                            alt={sample.china_code || ''}
                             fill
                             className="object-contain p-2"
-                            sizes="180px"
+                            sizes="160px"
+                            quality={55}
+                            loading="lazy"
                           />
                         ) : (
                           <div className="flex h-full items-center justify-center text-xs text-gray-400">

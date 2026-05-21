@@ -80,6 +80,7 @@ export function ImagePreviewDialog({
         {children}
       </div>
 
+    {open && (
       <Dialog
         open={open}
         onOpenChange={(nextOpen) => {
@@ -186,6 +187,7 @@ export function ImagePreviewDialog({
           </div>
         </DialogContent>
       </Dialog>
+    )}
     </>
   )
 }
