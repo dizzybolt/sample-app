@@ -1104,12 +1104,12 @@ const uploadOrderRequestImage = async (
 
         <Card className="print-break-inside-avoid">
           <CardContent className="space-y-4 p-5">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="font-semibold text-gray-900">발주 요청사항</h2>
               </div>
 
-              <div className="no-print flex gap-2">
+              <div className="no-print grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
               {!showSampleNotes && (
                 <Button
                   type="button"
