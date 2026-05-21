@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup, OrderExtraRow, } from '@/lib/types'
+import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup, OrderExtraRow, OrderRequest, OrderRequestItem, } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -27,9 +27,11 @@ interface OrderSheetClientProps {
   initialSamples: SampleEntry[]
   sizeGroups: SizeGroup[]
   initialQuantities: OrderSizeQuantity[]
+  initialOrderRequest: OrderRequest | null
   printHeader: PrintHeader | null
   printColumnHeaders: PrintColumnHeader[]
   initialExtraRows: OrderExtraRow[]
+  initialOrderRequestItems: OrderRequestItem[]
 }
 
 function getToday() {
@@ -45,6 +47,8 @@ export function OrderSheetClient({
   printHeader,
   printColumnHeaders,
   initialExtraRows,
+  initialOrderRequest,
+  initialOrderRequestItems,
 }: OrderSheetClientProps) {
   const [samples, setSamples] = useState(initialSamples)
   const [quantities, setQuantities] =
@@ -64,6 +68,28 @@ export function OrderSheetClient({
   const [extraRows, setExtraRows] = useState<OrderExtraRow[]>(initialExtraRows)
   const appendixRepresentative = samples[0]
   const appendixOtherSamples = samples.slice(1)
+
+  const [orderRequestItems, setOrderRequestItems] = useState<
+    (OrderRequestItem & { file?: File | null; previewUrl?: string | null })[]
+  >(
+    initialOrderRequestItems.map((item) => ({
+      ...item,
+      file: null,
+      previewUrl: item.request_image_url || null,
+    }))
+  )
+
+  const [showSampleNotes, setShowSampleNotes] = useState(true)
+
+  const [requestMemo, setRequestMemo] = useState(
+    initialOrderRequest?.request_memo || ''
+  )
+
+  const [requestImageUrl, setRequestImageUrl] = useState(
+    initialOrderRequest?.request_image_url || ''
+  )
+
+  const [requestImageFile, setRequestImageFile] = useState<File | null>(null)
 
   const getColumnLabel = (key: string, fallback: string) => {
   return (
@@ -307,6 +333,183 @@ const saveExtraRows = async () => {
 
   return true
 }
+
+  const uploadRequestImage = async () => {
+    if (!requestImageFile) return requestImageUrl || null
+
+    const formData = new FormData()
+    formData.append('file', requestImageFile)
+    formData.append('china_code', chinaCode || 'NOCHINA')
+    formData.append('color_code', 'ORDER_REQUEST')
+
+    const res = await fetch('https://sample-upload-api.onrender.com/upload-only', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const data = await res.json()
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.detail || data.message || '요청사항 이미지 업로드 실패')
+    }
+
+    return data.image_url || data.url
+  }
+
+  const handleSaveOrderRequest = async () => {
+    setIsSaving(true)
+
+    try {
+      const uploadedImageUrl = await uploadRequestImage()
+      const supabase = createClient()
+
+      const payload = {
+        order_date: date,
+        china_code: chinaCode,
+        request_memo: requestMemo.trim() || null,
+        request_image_url: uploadedImageUrl || null,
+        updated_at: new Date().toISOString(),
+      }
+
+      const { error } = await supabase
+        .from('order_requests')
+        .upsert(payload, {
+          onConflict: 'order_date,china_code',
+        })
+
+      if (error) {
+        throw error
+      }
+
+      setRequestImageUrl(uploadedImageUrl || '')
+      setRequestImageFile(null)
+
+      alert('발주 요청사항이 저장되었습니다.')
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : '발주 요청사항 저장에 실패했습니다.'
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+const addOrderRequestItem = () => {
+  setOrderRequestItems((prev) => [
+    ...prev,
+    {
+      id: crypto.randomUUID(),
+      order_date: date,
+      china_code: chinaCode,
+      sort_order: prev.length + 1,
+      request_memo: '',
+      request_image_url: null,
+      file: null,
+      previewUrl: null,
+    },
+  ])
+}
+
+const updateOrderRequestItem = (
+  id: string,
+  patch: Partial<OrderRequestItem & { file?: File | null; previewUrl?: string | null }>
+) => {
+  setOrderRequestItems((prev) =>
+    prev.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            ...patch,
+          }
+        : item
+    )
+  )
+}
+
+const removeOrderRequestItem = (id: string) => {
+  setOrderRequestItems((prev) => prev.filter((item) => item.id !== id))
+}
+
+const uploadOrderRequestImage = async (
+  item: OrderRequestItem & { file?: File | null }
+) => {
+  if (!item.file) {
+    return item.request_image_url || null
+  }
+
+  const formData = new FormData()
+  formData.append('file', item.file)
+  formData.append('china_code', chinaCode || 'NOCHINA')
+  formData.append('color_code', 'ORDER_REQUEST')
+
+  const res = await fetch('https://sample-upload-api.onrender.com/upload-only', {
+    method: 'POST',
+    body: formData,
+  })
+
+  const data = await res.json()
+
+  if (!res.ok || !data.success) {
+    throw new Error(data.detail || data.message || '요청사항 이미지 업로드 실패')
+  }
+
+  return data.image_url || data.url
+}
+
+  const saveOrderRequestItems = async () => {
+    setIsSaving(true)
+
+    try {
+      const supabase = createClient()
+
+      await supabase
+        .from('order_request_items')
+        .delete()
+        .eq('order_date', date)
+        .eq('china_code', chinaCode)
+
+      const rows = []
+
+      for (const [index, item] of orderRequestItems.entries()) {
+        const imageUrl = await uploadOrderRequestImage(item)
+
+        if (
+          !item.request_memo?.trim() &&
+          !imageUrl &&
+          !item.previewUrl
+        ) {
+          continue
+        }
+
+        rows.push({
+          order_date: date,
+          china_code: chinaCode,
+          sort_order: index + 1,
+          request_memo: item.request_memo || null,
+          request_image_url: imageUrl || null,
+          updated_at: new Date().toISOString(),
+        })
+      }
+
+      if (rows.length > 0) {
+        const { error } = await supabase.from('order_request_items').insert(rows)
+
+        if (error) throw error
+      }
+
+      alert('발주 요청사항이 저장되었습니다.')
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : '발주 요청사항 저장에 실패했습니다.'
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleSaveQty = async () => {
     setIsSaving(true)
@@ -823,19 +1026,45 @@ const saveExtraRows = async () => {
           </CardContent>
         </Card>
 
+      {showSampleNotes && (
         <Card className="print-break-inside-avoid">
-          <CardContent className="space-y-3 p-5">
-            <h2 className="font-semibold text-gray-900">비고</h2>
+          <CardContent className="space-y-4 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-gray-900">비고</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  샘플별 비고와 추가 행 비고를 확인합니다.
+                </p>
+              </div>
 
-            <div className="space-y-2 text-sm">
+              <button
+                type="button"
+                onClick={() => setShowSampleNotes(false)}
+                className="no-print rounded-md border bg-gray-900 px-3 py-1.5 text-sm font-medium text-white"
+              >
+                샘플별 비고 OFF
+              </button>
+            </div>
+
+            <div className="space-y-3">
               {samples
                 .filter((sample) => sample.memo || sample.note)
                 .map((sample) => (
-                  <div key={sample.id} className="rounded-xl bg-gray-50 p-3">
-                    <p className="font-medium text-gray-900">
-                      {sample.color_code || '-'} / {sample.color_name || '-'}
-                    </p>
-                    <p className="mt-1 text-gray-600">
+                  <div
+                    key={sample.id}
+                    className="rounded-xl border bg-gray-50 p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700">
+                        {sample.color_code || '-'}
+                      </span>
+
+                      <span className="text-sm font-medium text-gray-900">
+                        {sample.color_name || '-'}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
                       {sample.memo || sample.note}
                     </p>
                   </div>
@@ -844,21 +1073,166 @@ const saveExtraRows = async () => {
               {extraRows
                 .filter((row) => row.memo)
                 .map((row) => (
-                  <div key={row.id} className="rounded-xl bg-blue-50 p-3">
-                    <p className="font-medium text-gray-900">
-                      추가 행 / {row.color_code || '-'} / {row.color_name || '-'}
+                  <div
+                    key={row.id}
+                    className="rounded-xl border border-dashed bg-gray-50 p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700">
+                        추가행
+                      </span>
+
+                      <span className="text-sm font-medium text-gray-900">
+                        {row.color_code || '-'} / {row.color_name || '-'}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
+                      {row.memo}
                     </p>
-                    <p className="mt-1 text-gray-600">{row.memo}</p>
                   </div>
                 ))}
 
-              {samples.filter((sample) => sample.memo || sample.note).length === 0 &&
+              {samples.filter((sample) => sample.memo || sample.note).length ===
+                0 &&
                 extraRows.filter((row) => row.memo).length === 0 && (
-                  <p className="text-gray-500">등록된 비고가 없습니다.</p>
+                  <div className="rounded-xl bg-gray-50 p-6 text-center text-sm text-gray-500">
+                    등록된 비고가 없습니다.
+                  </div>
                 )}
             </div>
           </CardContent>
-        </Card>        
+        </Card>
+      )}
+
+        <Card className="print-break-inside-avoid">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-gray-900">발주 요청사항</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  이미지와 요청사항을 행 단위로 추가할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="no-print flex gap-2">
+              {!showSampleNotes && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSampleNotes(true)}
+                >
+                  샘플별 비고 ON
+                </Button>
+              )}
+                <Button type="button" variant="outline" onClick={addOrderRequestItem}>
+                  요청 추가
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={saveOrderRequestItems}
+                  disabled={isSaving}
+                >
+                  저장
+                </Button>
+              </div>
+            </div>
+
+            {orderRequestItems.length === 0 ? (
+              <div className="rounded-xl bg-gray-50 p-6 text-center text-sm text-gray-500">
+                등록된 요청사항이 없습니다.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {orderRequestItems.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="grid gap-4 rounded-2xl border bg-white p-4 lg:grid-cols-[220px_1fr_auto]"
+                  >
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">
+                        이미지 {index + 1}
+                      </p>
+
+                      <input
+                        id={`order-request-image-${item.id}`}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+
+                          updateOrderRequestItem(item.id, {
+                            file,
+                            previewUrl: URL.createObjectURL(file),
+                          })
+                        }}
+                      />
+
+                      {item.previewUrl || item.request_image_url ? (
+                        <ImagePreviewDialog
+                          src={item.previewUrl || item.request_image_url}
+                          alt={`${chinaCode} 요청사항 ${index + 1}`}
+                        >
+                          <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50">
+                            <img
+                              src={item.previewUrl || item.request_image_url || ''}
+                              alt={`${chinaCode} 요청사항 ${index + 1}`}
+                              className="h-full w-full object-contain p-2"
+                            />
+                          </div>
+                        </ImagePreviewDialog>
+                      ) : (
+                        <label
+                          htmlFor={`order-request-image-${item.id}`}
+                          className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border bg-gray-50 text-sm font-semibold text-gray-400 hover:bg-gray-100"
+                        >
+                          이미지 없음
+                        </label>
+                      )}
+
+                      <label
+                        htmlFor={`order-request-image-${item.id}`}
+                        className="no-print inline-block cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-900"
+                      >
+                        이미지 선택
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">요청사항</p>
+
+                      <textarea
+                        value={item.request_memo || ''}
+                        onChange={(e) =>
+                          updateOrderRequestItem(item.id, {
+                            request_memo: e.target.value,
+                          })
+                        }
+                        rows={7}
+                        placeholder="예: 컬러 변경, 자수 위치 변경, 원단 수정 요청 등을 입력하세요."
+                        className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </div>
+
+                    <div className="no-print flex items-start justify-end">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => removeOrderRequestItem(item.id)}
+                      >
+                        삭제
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
       </div>
     </main>
   )

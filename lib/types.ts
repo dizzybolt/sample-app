@@ -241,3 +241,24 @@ export interface InboundBatchQuantity {
   memo?: string | null
   created_at?: string | null
 }
+
+export interface OrderRequest {
+  id: string
+  order_date: string
+  china_code: string
+  request_memo?: string | null
+  request_image_url?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface OrderRequestItem {
+  id: string
+  order_date: string
+  china_code: string
+  sort_order?: number | null
+  request_memo?: string | null
+  request_image_url?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}

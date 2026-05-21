@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup, OrderExtraRow, } from '@/lib/types'
+import type { OrderSizeQuantity, PrintHeader, PrintColumnHeader, SampleEntry, SizeGroup, OrderExtraRow, OrderRequest, OrderRequestItem, } from '@/lib/types'
 import { OrderSheetClient } from '@/components/order-sheet-client'
 import { get } from 'http'
 
@@ -32,6 +32,49 @@ async function getOrderExtraRows(
   }
 
   return data || []
+}
+
+async function getOrderRequestItems(
+  date: string,
+  chinaCode: string
+): Promise<OrderRequestItem[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('order_request_items')
+    .select('*')
+    .eq('order_date', date)
+    .eq('china_code', chinaCode)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching order request items:', error)
+    return []
+  }
+
+  return data || []
+}
+
+async function getOrderRequest(
+  date: string,
+  chinaCode: string
+): Promise<OrderRequest | null> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('order_requests')
+    .select('*')
+    .eq('order_date', date)
+    .eq('china_code', chinaCode)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error fetching order request:', error)
+    return null
+  }
+
+  return data
 }
 
 async function getPrintHeader(): Promise<PrintHeader | null> {
@@ -146,6 +189,8 @@ export default async function OrderSheetPage({ params }: OrderSheetPageProps) {
 
   const samples = await getOrderSheetSamples(date, resolvedParams.china_code)
   const extraRows = await getOrderExtraRows(date, chinaCode)
+  const orderRequestItems = await getOrderRequestItems(date, chinaCode)
+  const orderRequest = await getOrderRequest(date, chinaCode)
 
   const [sizeGroups, printHeader, printColumnHeaders ] = await Promise.all([
     getSizeGroups(),
@@ -168,6 +213,8 @@ export default async function OrderSheetPage({ params }: OrderSheetPageProps) {
       printHeader={printHeader}
       printColumnHeaders={printColumnHeaders}
       initialExtraRows={extraRows}
+      initialOrderRequest={orderRequest}
+      initialOrderRequestItems={orderRequestItems}
     />
   )
 }
