@@ -1028,7 +1028,7 @@ const uploadOrderRequestImage = async (
 
       {showSampleNotes && (
         <Card className="print-break-inside-avoid">
-          <CardContent className="space-y-4 p-5">
+          <CardContent className="space-y-4 p-5 print:space-y-2 print:p-2">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-gray-900">비고</h2>
@@ -1139,89 +1139,126 @@ const uploadOrderRequestImage = async (
               </div>
             ) : (
               <div className="space-y-4">
-                {orderRequestItems.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className="grid gap-4 rounded-2xl border bg-white p-4 lg:grid-cols-[220px_1fr_auto]"
-                  >
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-gray-700">
-                        이미지 {index + 1}
-                      </p>
+                {orderRequestItems.map((item, index) => {
+                  const hasImage = Boolean(item.previewUrl || item.request_image_url)
 
-                      <input
-                        id={`order-request-image-${item.id}`}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
+                  return (
+                    <div
+                      key={item.id}
+                      className={`grid gap-3 rounded-xl border bg-white p-3 print:break-inside-avoid print:p-2 ${
+                        hasImage
+                          ? 'lg:grid-cols-[160px_1fr_auto] print:grid-cols-[90px_1fr]'
+                          : 'lg:grid-cols-[1fr_auto] print:grid-cols-1'
+                      }`}
+                    >
+                      {hasImage && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-gray-700 print:hidden">
+                            이미지 {index + 1}
+                          </p>
 
-                          updateOrderRequestItem(item.id, {
-                            file,
-                            previewUrl: URL.createObjectURL(file),
-                          })
-                        }}
-                      />
+                          <input
+                            id={`order-request-image-${item.id}`}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
 
-                      {item.previewUrl || item.request_image_url ? (
-                        <ImagePreviewDialog
-                          src={item.previewUrl || item.request_image_url}
-                          alt={`${chinaCode} 요청사항 ${index + 1}`}
-                        >
-                          <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50">
-                            <img
-                              src={item.previewUrl || item.request_image_url || ''}
-                              alt={`${chinaCode} 요청사항 ${index + 1}`}
-                              className="h-full w-full object-contain p-2"
-                            />
-                          </div>
-                        </ImagePreviewDialog>
-                      ) : (
-                        <label
-                          htmlFor={`order-request-image-${item.id}`}
-                          className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border bg-gray-50 text-sm font-semibold text-gray-400 hover:bg-gray-100"
-                        >
-                          이미지 없음
-                        </label>
+                              updateOrderRequestItem(item.id, {
+                                file,
+                                previewUrl: URL.createObjectURL(file),
+                              })
+                            }}
+                          />
+
+                          <ImagePreviewDialog
+                            src={item.previewUrl || item.request_image_url}
+                            alt={`${chinaCode} 요청사항 ${index + 1}`}
+                          >
+                            <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50 print:h-20 print:w-20 print:rounded-md">
+                              <img
+                                src={item.previewUrl || item.request_image_url || ''}
+                                alt={`${chinaCode} 요청사항 ${index + 1}`}
+                                className="h-full w-full object-contain p-2 print:p-1"
+                              />
+                            </div>
+                          </ImagePreviewDialog>
+
+                          <label
+                            htmlFor={`order-request-image-${item.id}`}
+                            className="no-print inline-block cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-900"
+                          >
+                            이미지 선택
+                          </label>
+                        </div>
                       )}
 
-                      <label
-                        htmlFor={`order-request-image-${item.id}`}
-                        className="no-print inline-block cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-900"
-                      >
-                        이미지 선택
-                      </label>
-                    </div>
+                      {!hasImage && (
+                        <input
+                          id={`order-request-image-${item.id}`}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
 
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-gray-700">요청사항</p>
+                            updateOrderRequestItem(item.id, {
+                              file,
+                              previewUrl: URL.createObjectURL(file),
+                            })
+                          }}
+                        />
+                      )}
 
-                      <textarea
-                        value={item.request_memo || ''}
-                        onChange={(e) =>
-                          updateOrderRequestItem(item.id, {
-                            request_memo: e.target.value,
-                          })
-                        }
-                        rows={7}
-                        placeholder="예: 컬러 변경, 자수 위치 변경, 원단 수정 요청 등을 입력하세요."
-                        className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900"
-                      />
-                    </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-gray-700">
+                            요청사항 {index + 1}
+                          </p>
 
-                    <div className="no-print flex items-start justify-end">
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={() => removeOrderRequestItem(item.id)}
-                      >
-                        삭제
-                      </Button>
+                          {!hasImage && (
+                            <label
+                              htmlFor={`order-request-image-${item.id}`}
+                              className="no-print cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-900"
+                            >
+                              이미지 추가
+                            </label>
+                          )}
+                        </div>
+
+                        <textarea
+                          value={item.request_memo || ''}
+                          onChange={(e) =>
+                            updateOrderRequestItem(item.id, {
+                              request_memo: e.target.value,
+                            })
+                          }
+                          rows={hasImage ? 5 : 3}
+                          placeholder="예: 컬러 변경, 자수 위치 변경, 원단 수정 요청 등을 입력하세요."
+                          className="no-print w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900"
+                        />
+
+                        <div className="hidden whitespace-pre-wrap rounded-md bg-gray-50 p-2 text-sm text-gray-700 print:block print:bg-white print:p-0">
+                          {item.request_memo || '-'}
+                        </div>
+                      </div>
+
+                      <div className="no-print flex items-start justify-end">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={() => removeOrderRequestItem(item.id)}
+                        >
+                          삭제
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
+
               </div>
             )}
           </CardContent>
