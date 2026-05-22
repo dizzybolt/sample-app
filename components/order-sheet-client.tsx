@@ -942,14 +942,15 @@ const uploadOrderRequestImage = async (
           </Button>
         </div>
 
-        <Card className="print-image-appendix">
-          <CardContent className="space-y-5 p-5">
+        <Card className="print-image-appendix order-print-appendix">
+          <CardContent className="space-y-5 p-5 print:space-y-3 print:p-4">
             <h2 className="font-semibold text-gray-900">이미지 별첨</h2>
 
             {samples.length === 0 ? (
               <p className="text-sm text-gray-500">표시할 샘플이 없습니다.</p>
             ) : (
-              <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+              <div className="order-print-image-layout grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+                {/* 대표 이미지 */}
                 <div className="print-image-item space-y-3">
                   <ImagePreviewDialog
                     src={appendixRepresentative?.image_url}
@@ -957,13 +958,13 @@ const uploadOrderRequestImage = async (
                       appendixRepresentative?.color_name || ''
                     }`}
                   >
-                    <div className="relative aspect-square overflow-hidden rounded-[28px] bg-gray-100 p-5">
+                    <div className="order-print-main-image relative aspect-square overflow-hidden rounded-2xl border bg-gray-50">
                       {appendixRepresentative?.image_url ? (
                         <Image
                           src={appendixRepresentative.image_url}
                           alt={appendixRepresentative.china_code || ''}
                           fill
-                          className="object-contain p-5"
+                          className="object-contain p-5 print:p-2"
                           sizes="420px"
                           quality={60}
                           loading="lazy"
@@ -986,20 +987,21 @@ const uploadOrderRequestImage = async (
                   </div>
                 </div>
 
-                <div className="grid content-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {/* 서브 이미지 */}
+                <div className="order-print-sub-list grid content-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {appendixOtherSamples.map((sample) => (
                     <div key={sample.id} className="print-image-item space-y-2">
                       <ImagePreviewDialog
                         src={sample.image_url}
                         alt={`${sample.china_code || ''} ${sample.color_name || ''}`}
                       >
-                        <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100 p-2">
+                        <div className="order-print-sub-image relative aspect-square overflow-hidden rounded-xl border bg-gray-50">
                           {sample.image_url ? (
                             <Image
                               src={sample.image_url}
                               alt={sample.china_code || ''}
                               fill
-                              className="object-contain p-2"
+                              className="object-contain p-2 print:p-1"
                               sizes="160px"
                               quality={55}
                               loading="lazy"
@@ -1016,7 +1018,9 @@ const uploadOrderRequestImage = async (
                         <p className="font-bold text-red-500">
                           {sample.color_code || '-'}
                         </p>
-                        <p className="text-gray-500">{sample.color_name || '-'}</p>
+                        <p className="text-gray-500">
+                          {sample.color_name || '-'}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -1147,7 +1151,7 @@ const uploadOrderRequestImage = async (
                       key={item.id}
                       className={`grid gap-4 rounded-xl border bg-white p-4 print:break-inside-avoid print:p-2 ${
                         hasImage
-                          ? 'lg:grid-cols-[480px_1fr_auto] print:grid-cols-[140px_1fr]'
+                          ? 'lg:grid-cols-[480px_1fr_auto] print:grid-cols-[220px_1fr]'
                           : 'lg:grid-cols-[1fr_auto] print:grid-cols-1'
                       }`}
                     >
@@ -1178,7 +1182,7 @@ const uploadOrderRequestImage = async (
                               src={item.previewUrl || item.request_image_url}
                               alt={`${chinaCode} 요청사항 ${index + 1}`}
                             >
-                              <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50 print:h-32 print:w-32 print:rounded-md">
+                              <div className="relative aspect-square overflow-hidden rounded-xl border bg-gray-50 print:h-56 print:w-56 print:rounded-md">
                                 <img
                                   src={item.previewUrl || item.request_image_url || ''}
                                   alt={`${chinaCode} 요청사항 ${index + 1}`}

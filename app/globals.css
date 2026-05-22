@@ -216,13 +216,44 @@
     object-fit: contain !important;
   }
 
-  .print-image-appendix .grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 8px !important;
-  }
+.print-image-appendix {
+  break-before: page;
+  page-break-before: always;
+}
 
-  .print-image-appendix [class*='aspect-square'] {
-    aspect-ratio: 1 / 1;
-    max-height: 55mm;
-  }
+.print-image-item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-image-appendix img {
+  object-fit: contain !important;
+}
+
+.order-print-image-layout {
+  display: grid !important;
+  grid-template-columns: 1fr 0.28fr !important;
+  gap: 18px !important;
+  align-items: start !important;
+}
+
+.order-print-main-image {
+  width: 100% !important;
+  aspect-ratio: 1 / 1 !important;
+  max-height: none !important;
+}
+
+.order-print-sub-list {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 18px !important;
+  align-content: start !important;
+}
+
+.order-print-sub-image {
+  width: 100% !important;
+  aspect-ratio: 1 / 1 !important;
+  max-height: none !important;
+}
+
 }
