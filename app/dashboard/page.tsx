@@ -258,8 +258,17 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
     .sort((a, b) => b.total - a.total)
     .slice(0, 6)
 }
+  interface DashboardPageProps {
+    searchParams?: Promise<{
+      images?: string
+    }>
+  }
 
-export default async function DashboardPage() {
+  export default async function DashboardPage({
+    searchParams,
+  }: DashboardPageProps) {
+  const resolvedSearchParams = await searchParams
+  const showImages = resolvedSearchParams?.images === 'on'
   const [samples, studios] = await Promise.all([getSamples(), getStudios()])
 
   const sampleStatusCounts = countBy(samples, (s) => s.sample_status || s.status)
@@ -347,6 +356,16 @@ export default async function DashboardPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Link
+              href={showImages ? '/dashboard' : '/dashboard?images=on'}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                showImages
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {showImages ? '이미지 숨기기' : '이미지 표시'}
+            </Link>            
             {quickLinks.map((link) => {
               const Icon = link.icon
 
@@ -425,7 +444,7 @@ export default async function DashboardPage() {
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                          {item?.image_url ? (
+                        {showImages && item?.image_url ? (
                           <Image
                             src={item.image_url}
                             alt={item.title || ''}
@@ -435,7 +454,7 @@ export default async function DashboardPage() {
                             quality={45}
                             loading="lazy"
                           />
-                          ) : null}
+                        ) : null}
                         </div>
 
                         <div className="min-w-0">
@@ -548,7 +567,7 @@ export default async function DashboardPage() {
               <Link key={item.chinaCode} href="/samples">
                 <Card className="overflow-hidden transition hover:-translate-y-1 hover:shadow-md">
                   <div className="relative aspect-[4/3] bg-gray-100">
-                    {item.representative.image_url ? (
+                    {showImages && item.representative.image_url ? (
                       <Image
                         src={item.representative.image_url}
                         alt={item.chinaCode}
@@ -558,7 +577,11 @@ export default async function DashboardPage() {
                         quality={50}
                         loading="lazy"
                       />
-                    ) : null}
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                        이미지 숨김
+                      </div>
+                    )}
                   </div>
 
                   <CardContent className="p-4">

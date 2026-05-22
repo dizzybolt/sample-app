@@ -8,6 +8,7 @@ import {
   ClipboardList,
   FileCog,
   FileText,
+  Home,
   IdCard,
   Menu,
   PackageCheck,
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
 const workNavItems = [
+  { title: '홈', href: '/', icon: Home },
   { title: '대시보드', href: '/dashboard', icon: BarChart3 },
   { title: '샘플관리', href: '/samples', icon: ClipboardList },
   { title: '발주관리', href: '/orders', icon: FileText },
