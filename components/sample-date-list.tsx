@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useMemo, useState } from 'react'
-import { Pencil, Plus, Search } from 'lucide-react'
+import { Download, Pencil, Plus, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ColorCode, SampleEntry, SampleStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import * as XLSX from 'xlsx'
 
 interface SampleDateListProps {
   initialSamples: SampleEntry[]
@@ -53,6 +54,31 @@ function getColorCount(items: SampleEntry[]) {
   return new Set(
     items.map((item) => `${item.color_code || ''}-${item.color_name || ''}`)
   ).size
+}
+
+function exportSamplesByDate(
+  date: string,
+  chinaMap: Map<string, SampleEntry[]>
+) {
+  const allItems = Array.from(chinaMap.values()).flat()
+
+  const rows = allItems.map((sample) => ({
+    일자: date,
+    '이미지 경로(url)': sample.image_url || '',
+    중국품번: sample.china_code || '',
+    한국품번: sample.korea_code || '',
+    색상: `${sample.color_name || ''}${
+      sample.color_code ? ` (${sample.color_code})` : ''
+    }`,
+    수량: Number(sample.quantity || sample.qty || 0),
+    비고: sample.note || sample.memo || '',
+  }))
+
+  const worksheet = XLSX.utils.json_to_sheet(rows)
+  const workbook = XLSX.utils.book_new()
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, '샘플리스트')
+  XLSX.writeFile(workbook, `샘플리스트_${date}.xlsx`)
 }
 
 export function SampleDateList({
@@ -220,9 +246,22 @@ export function SampleDateList({
           <section className="space-y-5">
             {groupedByDate.map(([date, chinaMap]) => (
               <div key={date} className="rounded-2xl bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="font-semibold text-gray-900">{date}</h2>
-                  <Badge variant="secondary">{chinaMap.size}개 품번</Badge>
+
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{chinaMap.size}개 품번</Badge>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportSamplesByDate(date, chinaMap)}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      엑셀 다운로드
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto pb-2">
