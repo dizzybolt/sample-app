@@ -147,6 +147,55 @@ export function OrderSheetClient({
     XLSX.writeFile(workbook, `발주서_${date}_${chinaCode}.xlsx`)
   }
 
+  const exportOrderExcelWithImages = async () => {
+    const rows = samples.flatMap((sample) =>
+      sizeLabels.map((size) => ({
+        이미지URL: sample.image_url || '',
+        썸네일: '',
+        중국품번: sample.china_code || '',
+        한국품번: sample.korea_code || '',
+        색상코드: sample.color_code || '',
+        색상명: sample.color_name || '',
+        사이즈: size,
+        발주수량: getQty(sample.id, size),
+        구분: '발주',
+        비고: sample.note || sample.memo || '',
+      }))
+    )
+
+    const extraRowsForExcel = extraRows.flatMap((row) =>
+      sizeLabels.map((size) => ({
+        이미지URL: row.image_url || '',
+        썸네일: '',
+        중국품번: chinaCode,
+        한국품번: row.korea_code || '',
+        색상코드: row.color_code || '',
+        색상명: row.color_name || '',
+        사이즈: size,
+        발주수량: Number(row.size_quantities?.[size] || 0),
+        구분: '추가행',
+        비고: row.memo || '',
+      }))
+    )
+
+    const templateRes = await fetch('/excel/order-sheet-template.xlsm')
+    const templateBuffer = await templateRes.arrayBuffer()
+
+    const workbook = XLSX.read(templateBuffer, {
+      type: 'array',
+      bookVBA: true,
+    })
+
+    const worksheetName = workbook.SheetNames[0]
+    const worksheet = XLSX.utils.json_to_sheet([...rows, ...extraRowsForExcel])
+
+    workbook.Sheets[worksheetName] = worksheet
+
+    XLSX.writeFile(workbook, `발주서_이미지포함_${date}_${chinaCode}.xlsm`, {
+      bookType: 'xlsm',
+    })
+  }
+
   const getQty = (sampleId: string, sizeLabel: string) => {
     const found = quantities.find(
       (item) =>
@@ -652,10 +701,19 @@ const uploadOrderRequestImage = async (
                 발주관리
               </Button>
             </Link>
-
+            {/*
             <Button variant="outline" onClick={exportOrderExcel}>
               <Download className="mr-2 h-4 w-4" />
               엑셀 다운로드
+            </Button>
+            */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={exportOrderExcelWithImages}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              엑셀 다운(이미지 포함)
             </Button>
 
             <Button variant="outline" onClick={() => window.print()}>

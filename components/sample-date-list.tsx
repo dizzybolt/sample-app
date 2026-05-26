@@ -81,6 +81,43 @@ function exportSamplesByDate(
   XLSX.writeFile(workbook, `샘플리스트_${date}.xlsx`)
 }
 
+async function exportSamplesByDateAsXlsm(
+  date: string,
+  chinaMap: Map<string, SampleEntry[]>
+) {
+  const allItems = Array.from(chinaMap.values()).flat()
+
+  const rows = allItems.map((sample) => ({
+    '이미지 경로(url)': sample.image_url || '',
+    썸네일: '',
+    일자: date,
+    중국품번: sample.china_code || '',
+    한국품번: sample.korea_code || '',
+    색상: `${sample.color_name || ''}${
+      sample.color_code ? ` (${sample.color_code})` : ''
+    }`,
+    수량: Number(sample.quantity || sample.qty || 0),
+    비고: sample.note || sample.memo || '',
+  }))
+
+  const templateRes = await fetch('/excel/sample-list-template.xlsm')
+  const templateBuffer = await templateRes.arrayBuffer()
+
+  const workbook = XLSX.read(templateBuffer, {
+    type: 'array',
+    bookVBA: true,
+  })
+
+  const worksheetName = workbook.SheetNames[0]
+  const worksheet = XLSX.utils.json_to_sheet(rows)
+
+  workbook.Sheets[worksheetName] = worksheet
+
+  XLSX.writeFile(workbook, `샘플리스트_이미지테스트_${date}.xlsm`, {
+    bookType: 'xlsm',
+  })
+}
+
 export function SampleDateList({
   initialSamples,
   colorCodes,
@@ -251,7 +288,7 @@ export function SampleDateList({
 
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary">{chinaMap.size}개 품번</Badge>
-
+                    {/*
                     <Button
                       type="button"
                       variant="outline"
@@ -259,7 +296,18 @@ export function SampleDateList({
                       onClick={() => exportSamplesByDate(date, chinaMap)}
                     >
                       <Download className="mr-2 h-4 w-4" />
-                      엑셀 다운로드
+                      샘플 리스트
+                    </Button>
+                    */}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportSamplesByDateAsXlsm(date, chinaMap)}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      엑셀 다운(이미지 포함)
                     </Button>
                   </div>
                 </div>
