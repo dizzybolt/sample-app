@@ -294,6 +294,8 @@ if (searchField === 'product_name') {
       return
     }
 
+    alert('상품정보가 성공적으로 저장되었습니다.')
+
     setSamples((prev) =>
       prev.map((sample) =>
         ids.includes(sample.id)
