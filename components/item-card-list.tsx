@@ -25,6 +25,8 @@ interface ItemCardListProps {
   studios: Studio[]
 }
 import { formatNumber } from '@/lib/format'
+import * as XLSX from 'xlsx'
+import { Download } from 'lucide-react'
 
 type UserActionStatus = '촬영중' | '촬영완료' | '작업중' | '작업완료'
 
@@ -81,6 +83,45 @@ function getRepresentativeColor(sample: SampleEntry) {
   }
 
   return sample.color_name || sample.color_code || '-'
+}
+
+const exportItemCardExcelWithImages = async (items: SampleEntry[]) => {
+  const rows = items.map((item) => ({
+    이미지URL: item.image_url || '',
+    썸네일: '',
+    중국품번: item.china_code || '',
+    한국품번: item.korea_code || '',
+    상품명: item.product_name || '',
+    색상코드: item.color_code || '',
+    색상명: item.color_name || '',
+    판매가: item.sale_price || '',
+    TAG가: item.tag_price || '',
+    원가: item.cost_price || '',
+    스튜디오: item.studio_name || '',
+    상태: item.item_card_status || '',
+    촬영이미지링크: item.shoot_image_url || '',
+  }))
+
+  const templateRes = await fetch('/excel/item-card-template.xlsm')
+  const templateBuffer = await templateRes.arrayBuffer()
+
+  const workbook = XLSX.read(templateBuffer, {
+    type: 'array',
+    bookVBA: true,
+  })
+
+  const worksheetName = workbook.SheetNames[0]
+  const worksheet = XLSX.utils.json_to_sheet(rows)
+
+  workbook.Sheets[worksheetName] = worksheet
+
+  XLSX.writeFile(
+    workbook,
+    `아이템카드_이미지포함_${items[0]?.china_code || 'download'}.xlsm`,
+    {
+      bookType: 'xlsm',
+    }
+  )
 }
 
 export function ItemCardList({ initialSamples, studios }: ItemCardListProps) {
@@ -310,6 +351,29 @@ if (searchField === 'product_name') {
     setSavingChinaCode(null)
   }
 
+  const exportAllItemCardsExcel = () => {
+    const rows = filteredSamples.map((item: SampleEntry) => ({
+      중국품번: item.china_code || '',
+      한국품번: item.korea_code || '',
+      상품명: item.product_name || '',
+      색상코드: item.color_code || '',
+      색상명: item.color_name || '',
+      판매가: item.sale_price || '',
+      TAG가: item.tag_price || '',
+      원가: item.cost_price || '',
+      스튜디오: item.studio_name || '',
+      상태: item.item_card_status || '',
+      촬영이미지링크: item.shoot_image_url || '',
+      이미지URL: item.image_url || '',
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+    const workbook = XLSX.utils.book_new()
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, '아이템카드')
+    XLSX.writeFile(workbook, '아이템카드_전체.xlsx')
+  }
+
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-5">
@@ -321,50 +385,32 @@ if (searchField === 'product_name') {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-<div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:flex-1">
-  <div className="w-full sm:w-36">
-    <Select
-      value={searchField}
-      onValueChange={(value) =>
-        setSearchField(
-          value as 'all' | 'china_code' | 'korea_code' | 'product_name'
-        )
-      }
-    >
-      <SelectTrigger>
-        <SelectValue placeholder="검색 구분" />
-      </SelectTrigger>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 검색 구분 */}
+            <div className="w-28 shrink-0">
+              <Select
+                value={searchField}
+                onValueChange={(value) =>
+                  setSearchField(
+                    value as 'all' | 'china_code' | 'korea_code' | 'product_name'
+                  )
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="검색 구분" />
+                </SelectTrigger>
 
-      <SelectContent>
-        <SelectItem value="all">전체</SelectItem>
-        <SelectItem value="china_code">중국품번</SelectItem>
-        <SelectItem value="korea_code">한국품번</SelectItem>
-        <SelectItem value="product_name">상품명</SelectItem>
-      </SelectContent>
-    </Select>
-  </div>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="china_code">중국품번</SelectItem>
+                  <SelectItem value="korea_code">한국품번</SelectItem>
+                  <SelectItem value="product_name">상품명</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-  <div className="relative flex-1">
-    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-    <Input
-      value={searchTerm}
-      onChange={(e) => setSearchTerm(e.target.value)}
-      placeholder={
-        searchField === 'all'
-          ? '중국품번, 한국품번, 상품명 검색'
-          : searchField === 'china_code'
-            ? '중국품번 검색'
-            : searchField === 'korea_code'
-              ? '한국품번 검색'
-              : '상품명 검색'
-      }
-      className="pl-9"
-    />
-  </div>
-</div>
-
-            <div className="w-full lg:w-48">
+            {/* 스튜디오 */}
+            <div className="w-40 shrink-0">
               <Select
                 value={studioFilter}
                 onValueChange={setStudioFilter}
@@ -390,6 +436,38 @@ if (searchField === 'product_name') {
               </Select>
             </div>
 
+            {/* 검색창 */}
+            <div className="relative min-w-[280px] flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={
+                  searchField === 'all'
+                    ? '중국품번, 한국품번, 상품명 검색'
+                    : searchField === 'china_code'
+                      ? '중국품번 검색'
+                      : searchField === 'korea_code'
+                        ? '한국품번 검색'
+                        : '상품명 검색'
+                }
+                className="pl-9"
+              />
+            </div>
+
+            {/* 전체 다운로드 */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={exportAllItemCardsExcel}
+              className="shrink-0"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              전체 다운로드
+            </Button>
+
+            {/* 상태 필터 */}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant={statusFilter === 'all' ? 'default' : 'outline'}
@@ -670,14 +748,27 @@ if (searchField === 'product_name') {
                         </div>
                       </div>
 
+                    <div className="grid grid-cols-5 gap-2">
                       <Button
                         type="submit"
-                        disabled={isSaving}
-                        className="w-full"
+                        className="col-span-4"
                       >
                         <Save className="mr-2 h-4 w-4" />
                         상품정보 저장
                       </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => exportItemCardExcelWithImages(items)}
+                        className="col-span-1"
+                        title="이미지 포함 엑셀"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span className="sr-only">이미지 포함 엑셀</span>
+                      </Button>
+                    </div>
+
                     </form>
 
                     <div className="border-t pt-3">
@@ -729,3 +820,4 @@ if (searchField === 'product_name') {
     </main>
   )
 }
+
