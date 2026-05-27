@@ -113,7 +113,7 @@ async function exportSamplesByDateAsXlsm(
 
   workbook.Sheets[worksheetName] = worksheet
 
-  XLSX.writeFile(workbook, `샘플리스트_이미지테스트_${date}.xlsm`, {
+  XLSX.writeFile(workbook, `샘플리스트_${date}.xlsm`, {
     bookType: 'xlsm',
   })
 }

@@ -191,7 +191,7 @@ export function OrderSheetClient({
 
     workbook.Sheets[worksheetName] = worksheet
 
-    XLSX.writeFile(workbook, `발주서_이미지포함_${date}_${chinaCode}.xlsm`, {
+    XLSX.writeFile(workbook, `발주서_${date}_${chinaCode}.xlsm`, {
       bookType: 'xlsm',
     })
   }

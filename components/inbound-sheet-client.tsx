@@ -252,7 +252,7 @@ export function InboundSheetClient({
 
       XLSX.writeFile(
         workbook,
-        `입고확인서_이미지포함_${inboundDate || date}_${chinaCode}.xlsm`,
+        `입고확인서_${inboundDate || date}_${chinaCode}.xlsm`,
         {
           bookType: 'xlsm',
         }
