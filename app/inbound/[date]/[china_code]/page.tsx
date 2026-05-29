@@ -67,9 +67,8 @@ async function getInboundSheetSamples(
 
   return (data || []).filter((sample) => {
     const dateKey =
-      toKoreaDate(sample.order_requested_at) ||
-      toKoreaDate(sample.ordered_at) ||
-      toKoreaDate(sample.created_at) ||
+      sample.checked_at?.slice(0, 10) ||
+      sample.created_at?.slice(0, 10) ||
       '날짜없음'
 
     return dateKey === date

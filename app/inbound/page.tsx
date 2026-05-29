@@ -88,9 +88,8 @@ function toKoreaDate(value?: string | null) {
 
 function getDateKey(sample: SampleEntry) {
   return (
-    toKoreaDate(sample.order_requested_at) ||
-    toKoreaDate(sample.ordered_at) ||
-    toKoreaDate(sample.created_at) ||
+    sample.checked_at?.slice(0, 10) ||
+    sample.created_at?.slice(0, 10) ||
     '날짜없음'
   )
 }
