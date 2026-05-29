@@ -161,99 +161,43 @@ export function ProductMasterManager() {
       : []
 
   async function handleCreateProduct() {
-    if (!generated) {
-      alert('브랜드/카테고리/연도/시즌 코드를 모두 선택해 주세요.')
-      return
-    }
-
-    setIsSaving(true)
-
-    const skuValues = generatedSkus.map((item) => item.sku)
-
-    if (skuValues.length > 0) {
-      const { data: duplicatedSkus } = await supabase
-        .from('product_skus')
-        .select('sku')
-        .in('sku', skuValues)
-
-      if ((duplicatedSkus || []).length > 0) {
-        setIsSaving(false)
-        alert(
-          `이미 등록된 SKU가 있습니다.\n\n${duplicatedSkus
-            ?.map((item) => item.sku)
-            .join('\n')}`
-        )
-        return
-      }
-    }
-
-    const { data: product, error: productError } = await supabase
-      .from('product_master')
-      .insert({
-        model_name: generated.modelName,
-        brand_code: brandCode,
-        category_code: categoryCode,
-        year_code: yearCode,
-        season_code: seasonCode,
-        seq_no: generated.seqNo,
-        product_name: productName.trim() || null,
-        gender: gender.trim() || null,
-        size_group_name: selectedSizeGroup?.name || null,
-        note: note.trim() || null,
-        status: '운영대기',
-      })
-      .select('*')
-      .single()
-
-    if (productError) {
-      setIsSaving(false)
-      alert(`상품 마스터 생성 실패\n\n${productError.message}`)
-      return
-    }
-
-    if (generatedSkus.length > 0) {
-      const skuRows = generatedSkus.map((item) => ({
-        product_id: product.id,
-        model_name: generated.modelName,
-        sku: item.sku,
-        color_code: item.colorCode,
-        color_name: item.colorName || null,
-        size_label: item.sizeLabel,
-        image_url: null,
-        is_active: true,
-      }))
-
-      const { error: skuError } = await supabase
-        .from('product_skus')
-        .insert(skuRows)
-
-      if (skuError) {
-        setIsSaving(false)
-        alert(`SKU 생성 실패\n\n${skuError.message}`)
-        return
-      }
-    }
-
-    setIsSaving(false)
-
-    alert(
-      `상품 마스터가 생성되었습니다.\n\n모델명: ${
-        generated.modelName
-      }\nSKU: ${generatedSkus.length}개`
-    )
-
-    setBrandCode('')
-    setCategoryCode('')
-    setYearCode('')
-    setSeasonCode('')
-    setProductName('')
-    setGender('')
-    setNote('')
-    setSelectedColorCode('')
-    setSelectedSizeGroupId('')
-
-    await fetchData()
+  if (!generated) {
+    alert('브랜드/카테고리/연도/시즌 코드를 모두 선택해 주세요.')
+    return
   }
+
+  setIsSaving(true)
+
+  const { error } = await supabase
+    .from('product_master')
+    .insert({
+      model_name: generated.modelName,
+      brand_code: brandCode,
+      category_code: categoryCode,
+      year_code: yearCode,
+      season_code: seasonCode,
+      seq_no: generated.seqNo,
+      status: '운영대기',
+    })
+
+  setIsSaving(false)
+
+  if (error) {
+    alert(`상품 마스터 생성 실패\n\n${error.message}`)
+    return
+  }
+
+  alert(
+    `상품 마스터 생성 완료\n\n${generated.modelName}`
+  )
+
+  setBrandCode('')
+  setCategoryCode('')
+  setYearCode('')
+  setSeasonCode('')
+
+  await fetchData()
+}
 
   async function handleBulkUploadModels(file: File) {
     const buffer = await file.arrayBuffer()
@@ -511,7 +455,7 @@ export function ProductMasterManager() {
           disabled={isSaving}
           className="mt-4"
         >
-          상품 마스터 + SKU 생성
+          상품 마스터 생성
         </Button>
       </section>
 
@@ -523,21 +467,51 @@ export function ProductMasterManager() {
             <p className="text-sm text-gray-500">등록된 상품이 없습니다.</p>
           ) : (
             products.map((product) => (
-              <div key={product.id} className="rounded-xl border p-4">
-                <p className="font-bold text-gray-900">
-                  {product.model_name}
-                </p>
-                <p className="mt-1 text-sm text-gray-500">
-                  {product.product_name || '-'} / {product.status || '-'}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  브랜드 {product.brand_code} · 카테고리{' '}
-                  {product.category_code} · 연도 {product.year_code} · 시즌{' '}
-                  {product.season_code} · 일련번호 {product.seq_no}
-                </p>
-              </div>
-            ))
-          )}
+  <div
+    key={product.id}
+    className="relative rounded-xl border p-4"
+  >
+    <button
+      type="button"
+      className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border text-sm text-gray-500 transition hover:bg-red-50 hover:text-red-600"
+      onClick={async () => {
+        const ok = window.confirm(
+          `${product.model_name} 상품 마스터를 삭제할까요?`
+        )
+
+        if (!ok) return
+
+        const { error } = await supabase
+          .from('product_master')
+          .delete()
+          .eq('id', product.id)
+
+        if (error) {
+          alert(`삭제 실패\n\n${error.message}`)
+          return
+        }
+
+        await fetchData()
+      }}
+    >
+      ✕
+    </button>
+
+    <p className="font-bold text-gray-900">
+      {product.model_name}
+    </p>
+
+    <p className="mt-1 text-sm text-gray-500">
+      {product.product_name || '-'} / {product.status || '-'}
+    </p>
+
+    <p className="mt-1 text-xs text-gray-400">
+      브랜드 {product.brand_code} · 카테고리{' '}
+      {product.category_code} · 연도 {product.year_code} · 시즌{' '}
+      {product.season_code} · 일련번호 {product.seq_no}
+    </p>
+  </div>
+)))}
         </div>
       </section>
     </div>
