@@ -29,9 +29,9 @@ interface DashboardStatusPanelProps {
 }
 
 const tabs = [
-  { key: 'studio', label: '스튜디오 현황' },
   { key: 'inbound', label: '입고 현황' },
   { key: 'sample', label: '샘플등록 현황' },
+  { key: 'studio', label: '스튜디오 현황' },
 ] as const
 
 type TabKey = (typeof tabs)[number]['key']
@@ -77,7 +77,7 @@ function getLatestDateItems(
 }
 
 export function DashboardStatusPanel({ samples }: DashboardStatusPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>('studio')
+  const [activeTab, setActiveTab] = useState<TabKey>('inbound')
 
   const currentData = useMemo(() => {
     if (activeTab === 'studio') {
