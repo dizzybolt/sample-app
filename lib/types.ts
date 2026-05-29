@@ -262,3 +262,86 @@ export interface OrderRequestItem {
   created_at?: string | null
   updated_at?: string | null
 }
+
+export interface BrandCode {
+  id: string
+  sort_no?: number | null
+  code: string
+  type?: string | null
+  description?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface CategoryCode {
+  id: string
+  sort_no?: number | null
+  code: string
+  category_name?: string | null
+  note?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface SeasonCode {
+  id: string
+  sort_no?: number | null
+  code: string
+  season_name?: string | null
+  note?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface YearCode {
+  id: string
+  sort_no?: number | null
+  code: string
+  year_label?: string | null
+  note?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface ProductMaster {
+  id: string
+  model_name: string
+  brand_code: string
+  category_code: string
+  season_code: string
+  year_code: string
+  seq_no: number
+  product_name?: string | null
+  gender?: string | null
+  size_group_name?: string | null
+  representative_image_url?: string | null
+  shoot_image_url?: string | null
+  sale_price?: number | null
+  tag_price?: number | null
+  cost_price?: number | null
+  status?: string | null
+  note?: string | null
+  source_china_code?: string | null
+  source_sample_id?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface ProductSku {
+  id: string
+  product_id?: string | null
+  model_name: string
+  sku: string
+  color_code: string
+  color_name?: string | null
+  size_label: string
+  barcode?: string | null
+  image_url?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+}
