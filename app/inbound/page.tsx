@@ -276,9 +276,9 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
 
                     return (
                       <Link key={`${date}-${chinaCode}`} href={href}>
-                        <Card className="h-full transition hover:-translate-y-1 hover:shadow-md">
-                          <CardContent className="flex gap-3 p-3">
-                            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                        <Card className="block w-full rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md">
+                          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                            <div className="relative h-32 w-full overflow-hidden rounded-xl bg-gray-100 sm:h-28 sm:w-28 sm:shrink-0">
                               {representative.image_url ? (
                                 <Image
                                   src={representative.image_url}
@@ -299,9 +299,6 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
                                 <h3 className="truncate font-semibold text-gray-900">
                                   {representative.korea_code || '-'}
                                 </h3>
-                                <p className="mt-1 text-sm text-gray-500">
-                                  {chinaCode}
-                                </p>
                                 <Badge variant="outline">
                                   {representative.inbound_status || '입고대기'}
                                 </Badge>

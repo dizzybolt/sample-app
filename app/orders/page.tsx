@@ -162,9 +162,9 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 
                     return (
                       <Link key={`${date}-${chinaCode}`} href={href}>
-                        <Card className="h-full transition hover:-translate-y-1 hover:shadow-md">
-                          <CardContent className="flex gap-3 p-3">
-                            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                        <Card className="block w-full rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md">
+                          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                            <div className="relative h-32 w-full overflow-hidden rounded-xl bg-gray-100 sm:h-28 sm:w-28 sm:shrink-0">
                               {representative.image_url ? (
                                 <Image
                                   src={representative.image_url}
@@ -183,7 +183,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start justify-between gap-2">
                                 <h3 className="truncate font-semibold text-gray-900">
-                                  {chinaCode}
+                                  {representative.korea_code || '-'}
                                 </h3>
                                 <Badge variant="outline">
                                   {representative.order_status || '발주대기'}
