@@ -66,14 +66,17 @@ function toKoreaDate(value?: string | null) {
   return `${year}-${month}-${day}`
 }
 
-function getAutoInboundStatus(
-  expectedQty: number,
-  receivedQty: number
-): InboundStatus {
-  if (receivedQty === 0) return '입고누락'
-  if (receivedQty < expectedQty) return '부분입고'
-  if (receivedQty === expectedQty) return '입고완료'
-  return '추가입고'
+const getAutoInboundStatus = (
+  expectedTotal: number,
+  cumulativeTotal: number
+): InboundStatus => {
+  if (cumulativeTotal <= 0) return '입고대기'
+
+  if (expectedTotal <= 0) return '입고완료'
+
+  if (cumulativeTotal < expectedTotal) return '부분입고'
+
+  return '입고완료'
 }
 
 export function InboundSheetClient({
@@ -102,6 +105,14 @@ export function InboundSheetClient({
   const [selectedBatchId, setSelectedBatchId] = useState(
     inboundBatches[0]?.id || ''
   )
+
+  const getCurrentBatchTotal = () => {
+    if (!selectedBatchId) return 0
+
+    return batchQuantities
+      .filter((item) => item.batch_id === selectedBatchId)
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  }
 
   const representative = samples[0]
 
@@ -1164,7 +1175,7 @@ export function InboundSheetClient({
                       합계
                     </td>
                     <td className="border px-3 py-2 text-center">
-                      {formatNumber(totalReceivedQty)}
+                      {formatNumber(getCurrentBatchTotal())}
                     </td>
                     <td className="border px-3 py-2" />
                   </tr>

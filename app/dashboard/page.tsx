@@ -16,6 +16,7 @@ import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatNumber } from '@/lib/format'
+import { DashboardStatusPanel } from '@/components/dashboard-status-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -258,6 +259,77 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
     .sort((a, b) => b.total - a.total)
     .slice(0, 6)
 }
+
+type LatestStatusItem = {
+  chinaCode: string
+  koreaCode: string
+  date: string
+  summary: string
+}
+
+function getLatestByStatus(
+  samples: DashboardSample[],
+  matcher: (sample: DashboardSample) => boolean,
+  dateGetter: (sample: DashboardSample) => string | null | undefined,
+  summaryGetter: (sample: DashboardSample) => string
+): LatestStatusItem | null {
+  const found = samples
+    .filter(matcher)
+    .sort((a, b) =>
+      String(dateGetter(b) || b.updated_at || b.created_at || '').localeCompare(
+        String(dateGetter(a) || a.updated_at || a.created_at || '')
+      )
+    )[0]
+
+  if (!found) return null
+
+  return {
+    chinaCode: found.china_code || '-',
+    koreaCode: found.korea_code || '-',
+    date: formatDate(dateGetter(found) || found.updated_at || found.created_at),
+    summary: summaryGetter(found),
+  }
+}
+
+function getLatestInboundCompletedGroup(
+  samples: DashboardSample[]
+): LatestStatusItem | null {
+  const completedSamples = samples.filter(
+    (sample) => sample.inbound_status === '입고완료'
+  )
+
+  if (completedSamples.length === 0) return null
+
+  const latest = completedSamples.sort((a, b) =>
+    String(b.inbound_at || b.updated_at || b.created_at || '').localeCompare(
+      String(a.inbound_at || a.updated_at || a.created_at || '')
+    )
+  )[0]
+
+  const latestDate = formatDate(
+    latest.inbound_at || latest.updated_at || latest.created_at
+  )
+
+  const sameGroupSamples = completedSamples.filter(
+    (sample) =>
+      sample.china_code === latest.china_code &&
+      formatDate(sample.inbound_at || sample.updated_at || sample.created_at) ===
+        latestDate
+  )
+
+  const totalReceivedQty = sameGroupSamples.reduce(
+    (sum, sample) => sum + Number(sample.inbound_received_qty || 0),
+    0
+  )
+
+  return {
+    chinaCode: latest.china_code || '-',
+    koreaCode: latest.korea_code || '-',
+    date: latestDate,
+    summary: `누적입고 ${formatNumber(totalReceivedQty)}개`,
+  }
+}
+
   interface DashboardPageProps {
     searchParams?: Promise<{
       images?: string
@@ -283,6 +355,12 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
       desc: '상품화 판단 전',
       href: '/samples?status=샘플입고',
       icon: ClipboardList,
+      latest: getLatestByStatus(
+        samples,
+        (s) => (s.sample_status || s.status) === '샘플입고',
+        (s) => s.checked_at || s.created_at,
+        (s) => `수량 ${formatNumber(s.qty || s.quantity || 0)}개`
+      ),
     },
     {
       title: '진행',
@@ -290,6 +368,12 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
       desc: '상품화 진행 중',
       href: '/samples?status=진행',
       icon: IdCard,
+      latest: getLatestByStatus(
+        samples,
+        (s) => (s.sample_status || s.status) === '진행',
+        (s) => s.updated_at || s.created_at,
+        (s) => s.product_name || s.korea_code || '상품정보 없음'
+      ),
     },
     {
       title: '등록대기',
@@ -297,6 +381,12 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
       desc: '작업 완료 후 등록 대기',
       href: '/samples?status=등록대기',
       icon: BarChart3,
+      latest: getLatestByStatus(
+        samples,
+        (s) => (s.sample_status || s.status) === '등록대기',
+        (s) => s.work_completed_at || s.updated_at,
+        (s) => s.product_name || s.korea_code || '상품정보 없음'
+      ),
     },
     {
       title: '발주대기',
@@ -304,6 +394,12 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
       desc: '발주 처리 필요',
       href: '/orders?status=발주대기',
       icon: FileText,
+      latest: getLatestByStatus(
+        samples,
+        (s) => s.order_status === '발주대기',
+        (s) => s.order_requested_at || s.updated_at,
+        (s) => `발주수량 ${formatNumber(s.order_qty || 0)}개`
+      ),
     },
     {
       title: '입고대기',
@@ -311,13 +407,20 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
       desc: '입고 확인 필요',
       href: '/inbound?status=입고대기',
       icon: PackageCheck,
+      latest: getLatestByStatus(
+        samples,
+        (s) => s.inbound_status === '입고대기',
+        (s) => s.ordered_at || s.updated_at,
+        (s) => `입고예정 ${formatNumber(s.inbound_expected_qty || s.order_qty || 0)}개`
+      ),
     },
     {
-      title: '입고지연',
-      value: inboundStatusCounts.get('입고지연') || 0,
-      desc: '확인 필요',
-      href: '/inbound?status=입고지연',
-      icon: AlertTriangle,
+      title: '입고완료',
+      value: inboundStatusCounts.get('입고완료') || 0,
+      desc: '입고 처리 완료',
+      href: '/inbound?status=입고완료',
+      icon: PackageCheck,
+      latest: getLatestInboundCompletedGroup(samples),
     },
   ]
 
@@ -405,6 +508,18 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
                     </div>
 
                     <p className="mt-2 text-xs text-gray-500">{card.desc}</p>
+                    {card.latest && (
+                      <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
+                        <p className="font-semibold text-gray-900">
+                          최근 {card.latest.chinaCode}
+                        </p>
+                        <p className="font-semibold text-gray-900">
+                          최근 {card.latest.koreaCode}
+                        </p>
+                        <p className="mt-1">{card.latest.date}</p>
+                        <p className="mt-1">{card.latest.summary}</p>
+                      </div>
+                    )}                    
                   </CardContent>
                 </Card>
               </Link>
@@ -476,56 +591,8 @@ function getStudioStats(samples: DashboardSample[], studios: StudioRow[]) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-5">
-              <h2 className="text-lg font-semibold text-gray-900">
-                스튜디오 현황
-              </h2>
-              <p className="mt-1 text-sm text-gray-500">
-                촬영/작업 중인 항목 기준입니다.
-              </p>
-
-              <div className="mt-4 space-y-3">
-                {studioStats.length === 0 ? (
-                  <div className="rounded-xl bg-gray-50 p-6 text-center text-sm text-gray-500">
-                    현재 스튜디오 배정 작업이 없습니다.
-                  </div>
-                ) : (
-                  studioStats.map((studio) => (
-                    <div key={studio.id} className="rounded-xl border p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-semibold text-gray-900">
-                          {studio.name}
-                        </p>
-                        <Badge variant="outline">{formatNumber(studio.total)}건</Badge>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="rounded-lg bg-gray-50 p-2">
-                          <p className="text-gray-500">촬영대기</p>
-                          <p className="mt-1 font-bold text-gray-900">
-                            {formatNumber(studio.shootingWaiting)}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-gray-50 p-2">
-                          <p className="text-gray-500">촬영중</p>
-                          <p className="mt-1 font-bold text-gray-900">
-                            {formatNumber(studio.shooting)}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-gray-50 p-2">
-                          <p className="text-gray-500">작업중</p>
-                          <p className="mt-1 font-bold text-gray-900">
-                            {formatNumber(studio.working)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <DashboardStatusPanel samples={samples} />
+          
         </section>
 
         <section>
