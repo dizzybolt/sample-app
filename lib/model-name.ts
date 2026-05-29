@@ -1,4 +1,4 @@
-import { ProductMaster } from '@/lib/types'
+import type { ProductMaster } from '@/lib/types'
 
 interface GenerateModelNameParams {
   brandCode: string
@@ -15,11 +15,12 @@ export function generateNextModelName({
   seasonCode,
   existingProducts,
 }: GenerateModelNameParams) {
-  const prefix =
-    `${brandCode}${categoryCode}`
+  const prefix = `${brandCode}${categoryCode}`
+  const suffix = `${yearCode}${seasonCode}`
 
-  const suffix =
-    `${yearCode}${seasonCode}`
+  const existingModelNames = new Set(
+    existingProducts.map((product) => product.model_name)
+  )
 
   const matched = existingProducts.filter(
     (product) =>
@@ -34,7 +35,7 @@ export function generateNextModelName({
   matched.forEach((product) => {
     const seqText = product.model_name.slice(
       prefix.length,
-      prefix.length + 3
+      product.model_name.length - suffix.length
     )
 
     const seqNo = Number(seqText)
@@ -44,14 +45,22 @@ export function generateNextModelName({
     }
   })
 
-  const nextSeq = maxSeq + 1
+  let nextSeq = maxSeq + 1
+  let modelName = ''
 
-  const seqText = String(nextSeq).padStart(3, '0')
+  while (true) {
+    const seqText = String(nextSeq).padStart(3, '0')
+    modelName = `${prefix}${seqText}${suffix}`
+
+    if (!existingModelNames.has(modelName)) {
+      break
+    }
+
+    nextSeq += 1
+  }
 
   return {
-    modelName:
-      `${prefix}${seqText}${suffix}`,
-
+    modelName,
     seqNo: nextSeq,
   }
 }

@@ -40,6 +40,7 @@ const adminNavItems = [
 
 const DevNavItems = [
   { title: '상품 마스터', href: '/products', icon: Package },
+  { title: '모델코드관리', href: '/model-codes', icon: Package },
 ]
 
 const guideNavItem = {

@@ -1,26 +1,75 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import {
+import type {
   BrandCode,
   CategoryCode,
   SeasonCode,
   YearCode,
 } from '@/lib/types'
-
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-type TabType =
-  | 'brand'
-  | 'category'
-  | 'season'
-  | 'year'
+type TabType = 'brand' | 'category' | 'season' | 'year'
+
+type CodeRow = {
+  id: string
+  sort_no?: number | null
+  code: string
+  name?: string | null
+  note?: string | null
+  is_active?: boolean | null
+}
+
+const tabs: { key: TabType; label: string }[] = [
+  { key: 'brand', label: '브랜드코드' },
+  { key: 'category', label: '카테고리코드' },
+  { key: 'year', label: '연도코드' },
+  { key: 'season', label: '시즌코드' },
+]
+
+function getTableName(tab: TabType) {
+  if (tab === 'brand') return 'brand_codes'
+  if (tab === 'category') return 'category_codes'
+  if (tab === 'season') return 'season_codes'
+  return 'year_codes'
+}
+
+function getNameColumn(tab: TabType) {
+  if (tab === 'brand') return 'type'
+  if (tab === 'category') return 'category_name'
+  if (tab === 'season') return 'season_name'
+  return 'year_label'
+}
+
+function getNoteColumn(tab: TabType) {
+  if (tab === 'brand') return 'description'
+  return 'note'
+}
+
+function normalizeRows(
+  tab: TabType,
+  rows: BrandCode[] | CategoryCode[] | SeasonCode[] | YearCode[]
+): CodeRow[] {
+  return rows.map((row: any) => ({
+    id: row.id,
+    sort_no: row.sort_no ?? 0,
+    code: row.code || '',
+    name:
+      row.type ||
+      row.category_name ||
+      row.season_name ||
+      row.year_label ||
+      '',
+    note: row.description || row.note || '',
+    is_active: row.is_active ?? true,
+  }))
+}
 
 export function ModelCodeManager() {
   const supabase = createClient()
-  
+
   const [tab, setTab] = useState<TabType>('brand')
 
   const [brandCodes, setBrandCodes] = useState<BrandCode[]>([])
@@ -28,210 +77,323 @@ export function ModelCodeManager() {
   const [seasonCodes, setSeasonCodes] = useState<SeasonCode[]>([])
   const [yearCodes, setYearCodes] = useState<YearCode[]>([])
 
-  const [newCode, setNewCode] = useState('')
-  const [newName, setNewName] = useState('')
+  const [form, setForm] = useState({
+    sort_no: '',
+    code: '',
+    name: '',
+    note: '',
+    is_active: true,
+  })
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     fetchAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const currentRows = useMemo(() => {
+    if (tab === 'brand') return normalizeRows(tab, brandCodes)
+    if (tab === 'category') return normalizeRows(tab, categoryCodes)
+    if (tab === 'season') return normalizeRows(tab, seasonCodes)
+    return normalizeRows(tab, yearCodes)
+  }, [tab, brandCodes, categoryCodes, seasonCodes, yearCodes])
+
   async function fetchAll() {
-    const [
-      brandRes,
-      categoryRes,
-      seasonRes,
-      yearRes,
-    ] = await Promise.all([
+    const [brandRes, categoryRes, seasonRes, yearRes] = await Promise.all([
       supabase
         .from('brand_codes')
         .select('*')
-        .order('sort_no'),
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
 
       supabase
         .from('category_codes')
         .select('*')
-        .order('sort_no'),
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
 
       supabase
         .from('season_codes')
         .select('*')
-        .order('sort_no'),
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
 
       supabase
         .from('year_codes')
         .select('*')
-        .order('sort_no'),
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
     ])
 
     setBrandCodes((brandRes.data || []) as BrandCode[])
-    setCategoryCodes(
-      (categoryRes.data || []) as CategoryCode[]
-    )
-    setSeasonCodes(
-      (seasonRes.data || []) as SeasonCode[]
-    )
+    setCategoryCodes((categoryRes.data || []) as CategoryCode[])
+    setSeasonCodes((seasonRes.data || []) as SeasonCode[])
     setYearCodes((yearRes.data || []) as YearCode[])
   }
 
-  async function addCode() {
-    if (!newCode.trim()) return
-
-    if (tab === 'brand') {
-      await supabase.from('brand_codes').insert({
-        code: newCode,
-        type: newName,
-      })
-    }
-
-    if (tab === 'category') {
-      await supabase.from('category_codes').insert({
-        code: newCode,
-        category_name: newName,
-      })
-    }
-
-    if (tab === 'season') {
-      await supabase.from('season_codes').insert({
-        code: newCode,
-        season_name: newName,
-      })
-    }
-
-    if (tab === 'year') {
-      await supabase.from('year_codes').insert({
-        code: newCode,
-        year_label: newName,
-      })
-    }
-
-    setNewCode('')
-    setNewName('')
-
-    fetchAll()
+  function resetForm() {
+    setEditingId(null)
+    setForm({
+      sort_no: '',
+      code: '',
+      name: '',
+      note: '',
+      is_active: true,
+    })
   }
 
-  async function deleteCode(
-    table: string,
-    id: string
-  ) {
-    await supabase.from(table).delete().eq('id', id)
-
-    fetchAll()
+  function startEdit(row: CodeRow) {
+    setEditingId(row.id)
+    setForm({
+      sort_no: String(row.sort_no ?? ''),
+      code: row.code || '',
+      name: row.name || '',
+      note: row.note || '',
+      is_active: row.is_active ?? true,
+    })
   }
 
-  const currentList =
-    tab === 'brand'
-      ? brandCodes
-      : tab === 'category'
-        ? categoryCodes
-        : tab === 'season'
-          ? seasonCodes
-          : yearCodes
+  async function handleSave() {
+    if (!form.code.trim()) {
+      alert('코드를 입력해 주세요.')
+      return
+    }
+
+    setIsSaving(true)
+
+    const tableName = getTableName(tab)
+    const nameColumn = getNameColumn(tab)
+    const noteColumn = getNoteColumn(tab)
+
+    const payload = {
+      sort_no: form.sort_no === '' ? 0 : Number(form.sort_no),
+      code: form.code.trim(),
+      [nameColumn]: form.name.trim() || null,
+      [noteColumn]: form.note.trim() || null,
+      is_active: form.is_active,
+      updated_at: new Date().toISOString(),
+    }
+
+    const result = editingId
+      ? await supabase.from(tableName).update(payload).eq('id', editingId)
+      : await supabase.from(tableName).insert(payload)
+
+    setIsSaving(false)
+
+    if (result.error) {
+      alert(`저장 실패\n\n${result.error.message}`)
+      return
+    }
+
+    resetForm()
+    await fetchAll()
+  }
+
+  async function handleDelete(row: CodeRow) {
+    const ok = window.confirm(
+      `${row.code} 코드를 삭제할까요?\n이미 사용 중인 코드라면 삭제하지 않는 것을 권장합니다.`
+    )
+
+    if (!ok) return
+
+    const { error } = await supabase
+      .from(getTableName(tab))
+      .delete()
+      .eq('id', row.id)
+
+    if (error) {
+      alert(`삭제 실패\n\n${error.message}`)
+      return
+    }
+
+    await fetchAll()
+  }
+
+  async function toggleActive(row: CodeRow) {
+    const { error } = await supabase
+      .from(getTableName(tab))
+      .update({
+        is_active: !(row.is_active ?? true),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', row.id)
+
+    if (error) {
+      alert(`사용여부 변경 실패\n\n${error.message}`)
+      return
+    }
+
+    await fetchAll()
+  }
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant={tab === 'brand' ? 'default' : 'outline'}
-          onClick={() => setTab('brand')}
-        >
-          브랜드코드
-        </Button>
-
-        <Button
-          variant={
-            tab === 'category'
-              ? 'default'
-              : 'outline'
-          }
-          onClick={() => setTab('category')}
-        >
-          카테고리코드
-        </Button>
-
-        <Button
-          variant={
-            tab === 'season'
-              ? 'default'
-              : 'outline'
-          }
-          onClick={() => setTab('season')}
-        >
-          시즌코드
-        </Button>
-
-        <Button
-          variant={tab === 'year' ? 'default' : 'outline'}
-          onClick={() => setTab('year')}
-        >
-          연도코드
-        </Button>
+        {tabs.map((item) => (
+          <Button
+            key={item.key}
+            type="button"
+            variant={tab === item.key ? 'default' : 'outline'}
+            onClick={() => {
+              setTab(item.key)
+              resetForm()
+            }}
+          >
+            {item.label}
+          </Button>
+        ))}
       </div>
 
-      <div className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row">
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-4">
+          <h2 className="font-semibold text-gray-900">
+            {tabs.find((item) => item.key === tab)?.label} 등록/수정
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            모델명 자동 생성을 위한 기준 코드를 관리합니다.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[100px_140px_1fr_1fr_120px]">
           <Input
-            value={newCode}
+            value={form.sort_no}
             onChange={(e) =>
-              setNewCode(e.target.value)
+              setForm((prev) => ({ ...prev, sort_no: e.target.value }))
+            }
+            placeholder="NO"
+            type="number"
+          />
+
+          <Input
+            value={form.code}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                code: e.target.value.toUpperCase(),
+              }))
             }
             placeholder="코드"
           />
 
           <Input
-            value={newName}
+            value={form.name}
             onChange={(e) =>
-              setNewName(e.target.value)
+              setForm((prev) => ({ ...prev, name: e.target.value }))
             }
-            placeholder="이름 / 설명"
+            placeholder={
+              tab === 'brand'
+                ? '구분'
+                : tab === 'category'
+                  ? '카테고리명'
+                  : tab === 'season'
+                    ? '구분'
+                    : '연도'
+            }
           />
 
-          <Button onClick={addCode}>
-            추가
+          <Input
+            value={form.note}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, note: e.target.value }))
+            }
+            placeholder={tab === 'brand' ? '설명문' : '비고'}
+          />
+
+          <Button type="button" onClick={handleSave} disabled={isSaving}>
+            {editingId ? '수정 저장' : '추가'}
           </Button>
         </div>
 
-        <div className="mt-5 space-y-2">
-          {currentList.map((item: any) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between rounded-xl border p-3"
-            >
-              <div>
-                <p className="font-semibold">
-                  {item.code}
-                </p>
+        {editingId && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={resetForm}
+            className="mt-3"
+          >
+            수정 취소
+          </Button>
+        )}
+      </section>
 
-                <p className="text-sm text-gray-500">
-                  {item.type ||
-                    item.category_name ||
-                    item.season_name ||
-                    item.year_label}
-                </p>
-              </div>
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900">등록된 코드</h2>
 
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() =>
-                  deleteCode(
-                    tab === 'brand'
-                      ? 'brand_codes'
-                      : tab === 'category'
-                        ? 'category_codes'
-                        : tab === 'season'
-                          ? 'season_codes'
-                          : 'year_codes',
-                    item.id
-                  )
-                }
-              >
-                삭제
-              </Button>
-            </div>
-          ))}
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left">
+                <th className="p-3">NO</th>
+                <th className="p-3">코드</th>
+                <th className="p-3">
+                  {tab === 'brand'
+                    ? '구분'
+                    : tab === 'category'
+                      ? '카테고리명'
+                      : tab === 'season'
+                        ? '구분'
+                        : '연도'}
+                </th>
+                <th className="p-3">{tab === 'brand' ? '설명문' : '비고'}</th>
+                <th className="p-3">사용</th>
+                <th className="p-3 text-right">관리</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {currentRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-6 text-center text-gray-500">
+                    등록된 코드가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                currentRows.map((row) => (
+                  <tr key={row.id} className="border-b">
+                    <td className="p-3">{row.sort_no ?? 0}</td>
+                    <td className="p-3 font-bold">{row.code}</td>
+                    <td className="p-3">{row.name || '-'}</td>
+                    <td className="p-3">{row.note || '-'}</td>
+                    <td className="p-3">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={row.is_active ? 'default' : 'outline'}
+                        onClick={() => toggleActive(row)}
+                      >
+                        {row.is_active ? '사용' : '미사용'}
+                      </Button>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => startEdit(row)}
+                        >
+                          수정
+                        </Button>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDelete(row)}
+                        >
+                          삭제
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
+      </section>
     </div>
   )
 }
