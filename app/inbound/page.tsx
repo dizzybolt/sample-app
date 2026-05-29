@@ -191,6 +191,7 @@ export default async function InboundPage({ searchParams }: InboundPageProps) {
               { label: '전체', value: 'all' },
               { label: '입고대기', value: '입고대기' },
               { label: '입고완료', value: '입고완료' },
+              { label: '부분입고', value: '부분입고' },
               { label: '입고지연', value: '입고지연' },
             ].map((item) => (
               <Link
