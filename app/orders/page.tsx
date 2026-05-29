@@ -5,6 +5,7 @@ import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatNumber } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,19 +59,28 @@ function groupByDateAndChinaCode(samples: SampleEntry[]) {
 interface OrdersPageProps {
   searchParams?: Promise<{
     status?: string
+    q?: string
   }>
 }
 
 export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   const resolvedSearchParams = await searchParams
   const statusFilter = resolvedSearchParams?.status || 'all'
-
+  const keywordRaw = (resolvedSearchParams?.q || '').trim()
+  const keyword = keywordRaw.toLowerCase()
   const samples = await getOrderSamples()
 
-  const filteredSamples =
-    statusFilter === 'all'
-      ? samples
-      : samples.filter((sample) => sample.order_status === statusFilter)
+  const filteredSamples = samples.filter((sample) => {
+    const matchesStatus =
+      statusFilter === 'all' || sample.order_status === statusFilter
+
+    const matchesKeyword =
+      !keyword ||
+      sample.china_code?.toLowerCase().includes(keyword) ||
+      sample.korea_code?.toLowerCase().includes(keyword)
+
+    return matchesStatus && matchesKeyword
+  })
   const groupedOrders = groupByDateAndChinaCode(filteredSamples)
 
   return (
@@ -104,6 +114,23 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               </Link>
             ))}
           </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-4 shadow-sm">
+          <form className="flex flex-col gap-2 sm:flex-row">
+            <input
+              name="q"
+              defaultValue={keywordRaw}
+              placeholder="중국품번, 한국품번 검색"
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+
+            <input type="hidden" name="status" value={statusFilter} />
+
+            <Button type="submit" variant="outline" className="sm:w-24">
+              검색
+            </Button>
+          </form>
         </section>
 
         {groupedOrders.length === 0 ? (
