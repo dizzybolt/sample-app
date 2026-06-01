@@ -256,4 +256,36 @@
   max-height: none !important;
 }
 
+.print-main-image-page {
+  break-before: page !important;
+  page-break-before: always !important;
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+.print-sub-images-page {
+  break-before: page !important;
+  page-break-before: always !important;
+}
+
+.print-main-image-box {
+  width: 100% !important;
+  max-width: 160mm !important;
+  height: 210mm !important;
+  max-height: 210mm !important;
+  margin: 0 auto !important;
+}
+
+.print-sub-image-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+.print-sub-image-box {
+  width: 100% !important;
+  aspect-ratio: 1 / 1 !important;
+  height: auto !important;
+}
+
 }

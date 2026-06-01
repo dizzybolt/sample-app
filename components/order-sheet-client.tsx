@@ -1000,93 +1000,81 @@ const uploadOrderRequestImage = async (
           </Button>
         </div>
 
-        <Card className="print-image-appendix order-print-appendix">
-          <CardContent className="space-y-5 p-5 print:space-y-3 print:p-4">
-            <h2 className="font-semibold text-gray-900">이미지 별첨</h2>
+{/* 대표 이미지 */}
+<Card className="print-main-image-page">
+  <CardContent className="space-y-5 p-5">
+    <h2 className="font-semibold text-gray-900">대표 이미지</h2>
 
-            {samples.length === 0 ? (
-              <p className="text-sm text-gray-500">표시할 샘플이 없습니다.</p>
-            ) : (
-              <div className="order-print-image-layout grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-                {/* 대표 이미지 */}
-                <div className="print-image-item space-y-3">
-                  <ImagePreviewDialog
-                    src={appendixRepresentative?.image_url}
-                    alt={`${appendixRepresentative?.china_code || ''} ${
-                      appendixRepresentative?.color_name || ''
-                    }`}
-                  >
-                    <div className="order-print-main-image relative aspect-square overflow-hidden rounded-2xl border bg-gray-50">
-                      {appendixRepresentative?.image_url ? (
-                        <Image
-                          src={appendixRepresentative.image_url}
-                          alt={appendixRepresentative.china_code || ''}
-                          fill
-                          className="object-contain p-5 print:p-2"
-                          sizes="420px"
-                          quality={60}
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                          이미지 없음
-                        </div>
-                      )}
-                    </div>
-                  </ImagePreviewDialog>
+    <div className="mx-auto print-main-image-box relative aspect-square overflow-hidden rounded-2xl border bg-gray-50">
+      {appendixRepresentative?.image_url ? (
+        <Image
+          src={appendixRepresentative.image_url}
+          alt={appendixRepresentative.china_code || ''}
+          fill
+          className="object-contain p-5"
+          sizes="720px"
+          quality={70}
+          loading="eager"
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center text-sm text-gray-400">
+          이미지 없음
+        </div>
+      )}
+    </div>
 
-                  <div className="text-sm">
-                    <p className="font-bold text-red-500">
-                      {appendixRepresentative?.color_code || '-'}
-                    </p>
-                    <p className="text-gray-500">
-                      {appendixRepresentative?.color_name || '-'}
-                    </p>
-                  </div>
+    <div className="text-sm">
+      <p className="font-bold text-red-500">
+        {appendixRepresentative?.color_code || '-'}
+      </p>
+      <p className="text-gray-500">
+        {appendixRepresentative?.color_name || '-'}
+      </p>
+    </div>
+  </CardContent>
+</Card>
+
+{/* 그 외 컬러 이미지 */}
+<Card className="print-sub-images-page">
+  <CardContent className="space-y-5 p-5">
+    <h2 className="font-semibold text-gray-900">그 외 컬러 이미지</h2>
+
+    {appendixOtherSamples.length === 0 ? (
+      <p className="text-sm text-gray-500">추가 컬러 이미지가 없습니다.</p>
+    ) : (
+      <div className="print-sub-image-grid grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {appendixOtherSamples.map((sample) => (
+          <div key={sample.id} className="print-image-item space-y-2">
+            <div className="print-sub-image-box relative aspect-square overflow-hidden rounded-xl border bg-gray-50">
+              {sample.image_url ? (
+                <Image
+                  src={sample.image_url}
+                  alt={sample.china_code || ''}
+                  fill
+                  className="object-contain p-2"
+                  sizes="160px"
+                  quality={60}
+                  loading="eager"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                  이미지 없음
                 </div>
+              )}
+            </div>
 
-                {/* 서브 이미지 */}
-                <div className="order-print-sub-list grid content-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {appendixOtherSamples.map((sample) => (
-                    <div key={sample.id} className="print-image-item space-y-2">
-                      <ImagePreviewDialog
-                        src={sample.image_url}
-                        alt={`${sample.china_code || ''} ${sample.color_name || ''}`}
-                      >
-                        <div className="order-print-sub-image relative aspect-square overflow-hidden rounded-xl border bg-gray-50">
-                          {sample.image_url ? (
-                            <Image
-                              src={sample.image_url}
-                              alt={sample.china_code || ''}
-                              fill
-                              className="object-contain p-2 print:p-1"
-                              sizes="160px"
-                              quality={55}
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-xs text-gray-400">
-                              이미지 없음
-                            </div>
-                          )}
-                        </div>
-                      </ImagePreviewDialog>
-
-                      <div className="text-xs">
-                        <p className="font-bold text-red-500">
-                          {sample.color_code || '-'}
-                        </p>
-                        <p className="text-gray-500">
-                          {sample.color_name || '-'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            <div className="text-xs">
+              <p className="font-bold text-red-500">
+                {sample.color_code || '-'}
+              </p>
+              <p className="text-gray-500">{sample.color_name || '-'}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </CardContent>
+</Card>
 
       {showSampleNotes && (
         <Card className="print-break-inside-avoid">
