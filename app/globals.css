@@ -125,86 +125,41 @@
 }
 
 @media print {
-  html,
-  body {
-    background: white !important;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
-  }
-
-  @page {
-    size: A4 portrait;
-    margin: 10mm;
-  }
-
-  aside,
-  header,
-  button,
-  .no-print {
-    display: none !important;
-  }
-
-  main {
-    padding: 0 !important;
-    margin: 0 !important;
-    background: white !important;
-  }
-
-  .overflow-x-auto {
-    overflow: visible !important;
-  }
-
-  .print-header {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .print-break-inside-avoid {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  table {
-    width: 100% !important;
-    min-width: 0 !important;
-    table-layout: fixed;
-    border-collapse: collapse;
-    font-size: 10px;
-  }
-
-  thead {
-    display: table-header-group;
-  }
-
-  tfoot {
-    display: table-footer-group;
-  }
-
-  tbody {
-    display: table-row-group;
-  }
-
-  tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  th,
-  td {
-    border: 1px solid #999 !important;
-    padding: 6px !important;
-    word-break: break-word;
-    white-space: normal !important;
-  }
-
-  img {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .print-image-appendix {
+  .print-main-image-page {
     break-before: page;
     page-break-before: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-sub-images-page {
+    break-before: page;
+    page-break-before: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-main-image-wrap {
+    width: 100% !important;
+  }
+
+  .print-main-image-box {
+    width: 100% !important;
+    height: 230mm !important;
+    max-height: 230mm !important;
+  }
+
+  .print-sub-image-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    align-items: start !important;
+  }
+
+  .print-sub-image-box {
+    width: 100% !important;
+    height: 58mm !important;
+    max-height: 58mm !important;
   }
 
   .print-image-item {
@@ -212,48 +167,8 @@
     page-break-inside: avoid;
   }
 
-  .print-image-appendix img {
+  .print-main-image-page img,
+  .print-sub-images-page img {
     object-fit: contain !important;
   }
-
-.print-image-appendix {
-  break-before: page;
-  page-break-before: always;
-}
-
-.print-image-item {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.print-image-appendix img {
-  object-fit: contain !important;
-}
-
-.order-print-image-layout {
-  display: grid !important;
-  grid-template-columns: 1fr 0.28fr !important;
-  gap: 18px !important;
-  align-items: start !important;
-}
-
-.order-print-main-image {
-  width: 100% !important;
-  aspect-ratio: 1 / 1 !important;
-  max-height: none !important;
-}
-
-.order-print-sub-list {
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 18px !important;
-  align-content: start !important;
-}
-
-.order-print-sub-image {
-  width: 100% !important;
-  aspect-ratio: 1 / 1 !important;
-  max-height: none !important;
-}
-
 }
