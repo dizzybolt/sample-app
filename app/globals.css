@@ -125,22 +125,94 @@
 }
 
 @media print {
-  .print-main-image-page {
-    break-before: page;
-    page-break-before: always;
+  html,
+  body {
+    width: 210mm;
+    min-height: 297mm;
+    background: white !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  aside,
+  header,
+  button,
+  .no-print,
+  .print-hide {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .print-header,
+  .print-break-inside-avoid {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .print-sub-images-page {
-    break-before: page;
-    page-break-before: always;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .print-main-image-wrap {
+  table {
     width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 10px !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tbody {
+    display: table-row-group;
+  }
+
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  th,
+  td {
+    border: 1px solid #999 !important;
+    padding: 5px !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+  }
+
+  img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    object-fit: contain !important;
+  }
+
+  .print-page-break,
+  .print-main-image-page,
+  .print-sub-images-page,
+  .print-note-page {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  .print-main-image-page {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
   .print-main-image-box {
@@ -149,22 +221,32 @@
     max-height: 230mm !important;
   }
 
+  .print-sub-images-page {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
   .print-sub-image-grid {
     display: grid !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 12px !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 8px !important;
     align-items: start !important;
   }
 
   .print-sub-image-box {
     width: 100% !important;
-    height: 58mm !important;
-    max-height: 58mm !important;
+    aspect-ratio: 1 / 1 !important;
+    height: auto !important;
+    max-height: none !important;
   }
 
   .print-image-item {
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-sub-images-page [class*='grid'] {
+    display: grid !important;
   }
 
   .print-main-image-page img,
