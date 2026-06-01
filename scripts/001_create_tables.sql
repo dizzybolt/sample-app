@@ -8,6 +8,18 @@ CREATE TABLE IF NOT EXISTS color_codes (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Create model_codes table
+CREATE TABLE IF NOT EXISTS model_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(code_type, code)
+);
+
 -- Create sample_entries table
 CREATE TABLE IF NOT EXISTS sample_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,6 +37,7 @@ CREATE TABLE IF NOT EXISTS sample_entries (
 
 -- Disable RLS for public access (no auth required for this app)
 ALTER TABLE color_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE model_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sample_entries ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read/write access to color_codes
@@ -32,6 +45,12 @@ CREATE POLICY "Allow public read color_codes" ON color_codes FOR SELECT USING (t
 CREATE POLICY "Allow public insert color_codes" ON color_codes FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update color_codes" ON color_codes FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete color_codes" ON color_codes FOR DELETE USING (true);
+
+-- Allow public read/write access to model_codes
+CREATE POLICY "Allow public read model_codes" ON model_codes FOR SELECT USING (true);
+CREATE POLICY "Allow public insert model_codes" ON model_codes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update model_codes" ON model_codes FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete model_codes" ON model_codes FOR DELETE USING (true);
 
 -- Allow public read/write access to sample_entries
 CREATE POLICY "Allow public read sample_entries" ON sample_entries FOR SELECT USING (true);
@@ -55,4 +74,16 @@ INSERT INTO color_codes (color_code, color_name, is_active, sort_order) VALUES
   ('12', '그린', true, 12),
   ('13', '블루', true, 13),
   ('14', '퍼플', true, 14)
+ON CONFLICT DO NOTHING;
+
+-- Insert default model codes
+INSERT INTO model_codes (code_type, code, name, is_active, sort_order) VALUES
+  ('brand', 'B01', '샘플 브랜드', true, 1),
+  ('category', 'SH', '셔츠', true, 1),
+  ('category', 'PT', '팬츠', true, 2),
+  ('category', 'DR', '드레스', true, 3),
+  ('year', '24', '2024년', true, 1),
+  ('year', '25', '2025년', true, 2),
+  ('season', 'S', '봄/여름', true, 1),
+  ('season', 'F', '가을/겨울', true, 2)
 ON CONFLICT DO NOTHING;

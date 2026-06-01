@@ -1,6 +1,30 @@
+import { createClient } from '@/lib/supabase/server'
+import type { ModelCode } from '@/lib/types'
 import { ModelCodeManager } from '@/components/model-code-manager'
 
-export default function ModelCodesPage() {
+export const dynamic = 'force-dynamic'
+
+async function getModelCodes(): Promise<ModelCode[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('model_codes')
+    .select('*')
+    .order('code_type', { ascending: true })
+    .order('sort_order', { ascending: true })
+    .order('code', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching model codes:', error)
+    return []
+  }
+
+  return data || []
+}
+
+export default async function ModelCodesPage() {
+  const modelCodes = await getModelCodes()
+
   return (
     <main className="space-y-6">
       <section>
@@ -13,7 +37,7 @@ export default function ModelCodesPage() {
         </p>
       </section>
 
-      <ModelCodeManager />
+      <ModelCodeManager initialModelCodes={modelCodes} />
     </main>
   )
 }

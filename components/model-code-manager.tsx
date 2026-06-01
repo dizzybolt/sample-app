@@ -1,238 +1,280 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useMemo } from 'react'
+import { Plus, Save, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import {
-  BrandCode,
-  CategoryCode,
-  SeasonCode,
-  YearCode,
-} from '@/lib/types'
-
+import type { ModelCode, ModelCodeType } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
-type TabType =
-  | 'brand'
-  | 'category'
-  | 'season'
-  | 'year'
+interface ModelCodeManagerProps {
+  initialModelCodes: ModelCode[]
+}
 
-export function ModelCodeManager() {
-  const [tab, setTab] = useState<TabType>('brand')
+const CODE_TYPES: { value: ModelCodeType; label: string }[] = [
+  { value: 'brand', label: '브랜드 코드' },
+  { value: 'category', label: '카테고리 코드' },
+  { value: 'year', label: '연도 코드' },
+  { value: 'season', label: '시즌 코드' },
+]
 
-  const [brandCodes, setBrandCodes] = useState<BrandCode[]>([])
-  const [categoryCodes, setCategoryCodes] = useState<CategoryCode[]>([])
-  const [seasonCodes, setSeasonCodes] = useState<SeasonCode[]>([])
-  const [yearCodes, setYearCodes] = useState<YearCode[]>([])
-
+export function ModelCodeManager({
+  initialModelCodes,
+}: ModelCodeManagerProps) {
+  const [modelCodes, setModelCodes] = useState(initialModelCodes)
+  const [newCodeType, setNewCodeType] = useState<ModelCodeType>('brand')
   const [newCode, setNewCode] = useState('')
   const [newName, setNewName] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
 
-  useEffect(() => {
-    fetchAll()
-  }, [])
+  const groupedCodes = useMemo(() => {
+    const grouped: Record<ModelCodeType, ModelCode[]> = {
+      brand: [],
+      category: [],
+      year: [],
+      season: [],
+    }
 
-  async function fetchAll() {
+    modelCodes.forEach((code) => {
+      grouped[code.code_type].push(code)
+    })
+
+    Object.keys(grouped).forEach((key) => {
+      grouped[key as ModelCodeType].sort(
+        (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
+      )
+    })
+
+    return grouped
+  }, [modelCodes])
+
+  const addModelCode = async () => {
+    const code = newCode.trim()
+    const name = newName.trim()
+
+    if (!code) {
+      alert('코드를 입력해 주세요.')
+      return
+    }
+
+    if (!name) {
+      alert('코드명을 입력해 주세요.')
+      return
+    }
+
+    if (
+      modelCodes.some(
+        (item) => item.code_type === newCodeType && item.code === code
+      )
+    ) {
+      alert('이미 등록된 코드입니다.')
+      return
+    }
+
+    setIsSaving(true)
+
     const supabase = createClient()
-    const [
-      brandRes,
-      categoryRes,
-      seasonRes,
-      yearRes,
-    ] = await Promise.all([
-      supabase
-        .from('brand_codes')
-        .select('*')
-        .order('sort_no'),
 
-      supabase
-        .from('category_codes')
-        .select('*')
-        .order('sort_no'),
-
-      supabase
-        .from('season_codes')
-        .select('*')
-        .order('sort_no'),
-
-      supabase
-        .from('year_codes')
-        .select('*')
-        .order('sort_no'),
-    ])
-
-    setBrandCodes((brandRes.data || []) as BrandCode[])
-    setCategoryCodes(
-      (categoryRes.data || []) as CategoryCode[]
+    const allCodesOfType = modelCodes.filter(
+      (c) => c.code_type === newCodeType
     )
-    setSeasonCodes(
-      (seasonRes.data || []) as SeasonCode[]
-    )
-    setYearCodes((yearRes.data || []) as YearCode[])
-  }
 
-  async function addCode() {
-    const supabase = createClient()
-    if (!newCode.trim()) return
-
-    if (tab === 'brand') {
-      await supabase.from('brand_codes').insert({
-        code: newCode,
-        type: newName,
+    const { data, error } = await supabase
+      .from('model_codes')
+      .insert({
+        code_type: newCodeType,
+        code,
+        name,
+        sort_order: allCodesOfType.length + 1,
+        is_active: true,
       })
+      .select('*')
+      .single()
+
+    setIsSaving(false)
+
+    if (error) {
+      alert('코드 추가에 실패했습니다.')
+      console.error(error)
+      return
     }
 
-    if (tab === 'category') {
-      await supabase.from('category_codes').insert({
-        code: newCode,
-        category_name: newName,
-      })
-    }
-
-    if (tab === 'season') {
-      await supabase.from('season_codes').insert({
-        code: newCode,
-        season_name: newName,
-      })
-    }
-
-    if (tab === 'year') {
-      await supabase.from('year_codes').insert({
-        code: newCode,
-        year_label: newName,
-      })
-    }
-
+    setModelCodes((prev) => [...prev, data])
     setNewCode('')
     setNewName('')
-
-    fetchAll()
   }
 
-  async function deleteCode(
-    table: string,
-    id: string
-  ) {
+  const updateModelCode = async (modelCode: ModelCode) => {
+    setIsSaving(true)
+
     const supabase = createClient()
-    await supabase.from(table).delete().eq('id', id)
 
-    fetchAll()
+    const { error } = await supabase
+      .from('model_codes')
+      .update({
+        code: modelCode.code,
+        name: modelCode.name,
+        sort_order: modelCode.sort_order || 0,
+        is_active: modelCode.is_active ?? true,
+      })
+      .eq('id', modelCode.id)
+
+    setIsSaving(false)
+
+    if (error) {
+      alert('저장에 실패했습니다.')
+      console.error(error)
+      return
+    }
+
+    alert('저장되었습니다.')
   }
 
-  const currentList =
-    tab === 'brand'
-      ? brandCodes
-      : tab === 'category'
-        ? categoryCodes
-        : tab === 'season'
-          ? seasonCodes
-          : yearCodes
+  const deleteModelCode = async (id: string) => {
+    const ok = window.confirm('이 코드를 삭제할까요?')
+    if (!ok) return
+
+    const supabase = createClient()
+
+    const { error } = await supabase.from('model_codes').delete().eq('id', id)
+
+    if (error) {
+      alert('삭제에 실패했습니다.')
+      console.error(error)
+      return
+    }
+
+    setModelCodes((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const updateLocalCode = (id: string, patch: Partial<ModelCode>) => {
+    setModelCodes((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item
+      )
+    )
+  }
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={tab === 'brand' ? 'default' : 'outline'}
-          onClick={() => setTab('brand')}
-        >
-          브랜드코드
-        </Button>
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <h2 className="font-semibold text-gray-900">새 코드 추가</h2>
 
-        <Button
-          variant={
-            tab === 'category'
-              ? 'default'
-              : 'outline'
-          }
-          onClick={() => setTab('category')}
-        >
-          카테고리코드
-        </Button>
+          <div className="grid gap-3 sm:grid-cols-[150px_120px_2fr_auto]">
+            <Select value={newCodeType} onValueChange={(value) => setNewCodeType(value as ModelCodeType)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CODE_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Button
-          variant={
-            tab === 'season'
-              ? 'default'
-              : 'outline'
-          }
-          onClick={() => setTab('season')}
-        >
-          시즌코드
-        </Button>
+            <Input
+              value={newCode}
+              onChange={(e) => setNewCode(e.target.value)}
+              placeholder="예: 01"
+            />
 
-        <Button
-          variant={tab === 'year' ? 'default' : 'outline'}
-          onClick={() => setTab('year')}
-        >
-          연도코드
-        </Button>
-      </div>
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="예: 화이트"
+            />
 
-      <div className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Input
-            value={newCode}
-            onChange={(e) =>
-              setNewCode(e.target.value)
-            }
-            placeholder="코드"
-          />
+            <Button onClick={addModelCode} disabled={isSaving}>
+              <Plus className="mr-2 h-4 w-4" />
+              추가
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-          <Input
-            value={newName}
-            onChange={(e) =>
-              setNewName(e.target.value)
-            }
-            placeholder="이름 / 설명"
-          />
+      {CODE_TYPES.map((type) => (
+        <section key={type.value} className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900">{type.label}</h2>
 
-          <Button onClick={addCode}>
-            추가
-          </Button>
-        </div>
+          {groupedCodes[type.value].length === 0 ? (
+            <p className="text-sm text-gray-500">등록된 코드가 없습니다.</p>
+          ) : (
+            <div className="space-y-3">
+              {groupedCodes[type.value].map((modelCode) => (
+                <Card key={modelCode.id}>
+                  <CardContent className="p-4">
+                    <div className="grid gap-3 sm:grid-cols-[100px_2fr_100px_auto_auto]">
+                      <Input
+                        value={modelCode.code || ''}
+                        onChange={(e) =>
+                          updateLocalCode(modelCode.id, {
+                            code: e.target.value,
+                          })
+                        }
+                        placeholder="코드"
+                      />
 
-        <div className="mt-5 space-y-2">
-          {currentList.map((item: any) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between rounded-xl border p-3"
-            >
-              <div>
-                <p className="font-semibold">
-                  {item.code}
-                </p>
+                      <Input
+                        value={modelCode.name || ''}
+                        onChange={(e) =>
+                          updateLocalCode(modelCode.id, {
+                            name: e.target.value,
+                          })
+                        }
+                        placeholder="코드명"
+                      />
 
-                <p className="text-sm text-gray-500">
-                  {item.type ||
-                    item.category_name ||
-                    item.season_name ||
-                    item.year_label}
-                </p>
-              </div>
+                      <Input
+                        type="number"
+                        value={modelCode.sort_order || 0}
+                        onChange={(e) =>
+                          updateLocalCode(modelCode.id, {
+                            sort_order: Number(e.target.value || 0),
+                          })
+                        }
+                        placeholder="정렬"
+                      />
 
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() =>
-                  deleteCode(
-                    tab === 'brand'
-                      ? 'brand_codes'
-                      : tab === 'category'
-                        ? 'category_codes'
-                        : tab === 'season'
-                          ? 'season_codes'
-                          : 'year_codes',
-                    item.id
-                  )
-                }
-              >
-                삭제
-              </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => updateModelCode(modelCode)}
+                        disabled={isSaving}
+                      >
+                        <Save className="mr-2 h-4 w-4" />
+                        저장
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        onClick={() => deleteModelCode(modelCode.id)}
+                        disabled={isSaving}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          )}
+        </section>
+      ))}
     </div>
   )
 }

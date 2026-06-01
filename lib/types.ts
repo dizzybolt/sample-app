@@ -88,6 +88,18 @@ export interface ColorCode {
   created_at?: string | null
 }
 
+export type ModelCodeType = 'brand' | 'category' | 'year' | 'season'
+
+export interface ModelCode {
+  id: string
+  code_type: ModelCodeType
+  code: string
+  name: string
+  is_active?: boolean | null
+  sort_order?: number | null
+  created_at?: string | null
+}
+
 export interface SampleGroup {
   china_code: string
   representative: SampleEntry
