@@ -41,6 +41,8 @@ const adminNavItems = [
 const DevNavItems = [
   { title: '상품 마스터', href: '/products', icon: Package },
   { title: '모델코드관리', href: '/model-codes', icon: Package },
+  { title: '창고관리', href: '/warehouses', icon: Package },
+  { title: '재고관리', href: '/inventory', icon: Package},
 ]
 
 const guideNavItem = {
@@ -108,7 +110,7 @@ export function AppShell({ children }: AppShellProps) {
 
         <div className="mt-6 border-t pt-4">
           <p className="px-3 pb-2 text-xs font-semibold text-gray-400">
-            In development
+            개발중
           </p>
 
           <div className="space-y-1">

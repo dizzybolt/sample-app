@@ -357,3 +357,45 @@ export interface ProductSku {
   created_at?: string | null
   updated_at?: string | null
 }
+
+export interface Warehouse {
+  id: string
+  name: string
+  code?: string | null
+  note?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface Inventory {
+  id: string
+  warehouse_id: string
+  sku: string
+  product_sku_id?: string | null
+  qty?: number | null
+  safety_qty?: number | null
+  note?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface InventoryLog {
+  id: string
+  inventory_id?: string | null
+  warehouse_id?: string | null
+  sku: string
+
+  change_type: string
+  change_qty: number
+
+  before_qty?: number | null
+  after_qty?: number | null
+
+  reason?: string | null
+
+  source_type?: string | null
+  source_id?: string | null
+
+  created_at?: string | null
+}
