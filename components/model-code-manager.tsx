@@ -1,280 +1,392 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { Plus, Save, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { ModelCode, ModelCodeType } from '@/lib/types'
+import type {
+  BrandCode,
+  CategoryCode,
+  SeasonCode,
+  YearCode,
+} from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
-interface ModelCodeManagerProps {
-  initialModelCodes: ModelCode[]
+type TabType = 'brand' | 'category' | 'year' | 'season'
+
+type CodeRow = {
+  id: string
+  sort_no?: number | null
+  code: string
+  name?: string | null
+  note?: string | null
+  is_active?: boolean | null
 }
 
-const CODE_TYPES: { value: ModelCodeType; label: string }[] = [
-  { value: 'brand', label: '브랜드 코드' },
-  { value: 'category', label: '카테고리 코드' },
-  { value: 'year', label: '연도 코드' },
-  { value: 'season', label: '시즌 코드' },
+const tabs: { key: TabType; label: string }[] = [
+  { key: 'brand', label: '브랜드코드' },
+  { key: 'category', label: '카테고리코드' },
+  { key: 'year', label: '연도코드' },
+  { key: 'season', label: '시즌코드' },
 ]
 
-export function ModelCodeManager({
-  initialModelCodes,
-}: ModelCodeManagerProps) {
-  const [modelCodes, setModelCodes] = useState(initialModelCodes)
-  const [newCodeType, setNewCodeType] = useState<ModelCodeType>('brand')
-  const [newCode, setNewCode] = useState('')
-  const [newName, setNewName] = useState('')
+function getTableName(tab: TabType) {
+  if (tab === 'brand') return 'brand_codes'
+  if (tab === 'category') return 'category_codes'
+  if (tab === 'year') return 'year_codes'
+  return 'season_codes'
+}
+
+function getNameColumn(tab: TabType) {
+  if (tab === 'brand') return 'type'
+  if (tab === 'category') return 'category_name'
+  if (tab === 'year') return 'year_label'
+  return 'season_name'
+}
+
+function getNoteColumn(tab: TabType) {
+  if (tab === 'brand') return 'description'
+  return 'note'
+}
+
+function normalizeRows(
+  rows: BrandCode[] | CategoryCode[] | SeasonCode[] | YearCode[]
+): CodeRow[] {
+  return rows.map((row: any) => ({
+    id: row.id,
+    sort_no: row.sort_no ?? 0,
+    code: row.code || '',
+    name:
+      row.type ||
+      row.category_name ||
+      row.year_label ||
+      row.season_name ||
+      '',
+    note: row.description || row.note || '',
+    is_active: row.is_active ?? true,
+  }))
+}
+
+export function ModelCodeManager() {
+  const supabase = createClient()
+
+  const [tab, setTab] = useState<TabType>('brand')
+  const [brandCodes, setBrandCodes] = useState<BrandCode[]>([])
+  const [categoryCodes, setCategoryCodes] = useState<CategoryCode[]>([])
+  const [yearCodes, setYearCodes] = useState<YearCode[]>([])
+  const [seasonCodes, setSeasonCodes] = useState<SeasonCode[]>([])
+
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
-  const groupedCodes = useMemo(() => {
-    const grouped: Record<ModelCodeType, ModelCode[]> = {
-      brand: [],
-      category: [],
-      year: [],
-      season: [],
-    }
+  const [form, setForm] = useState({
+    sort_no: '',
+    code: '',
+    name: '',
+    note: '',
+    is_active: true,
+  })
 
-    modelCodes.forEach((code) => {
-      grouped[code.code_type].push(code)
+  useEffect(() => {
+    fetchAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const currentRows = useMemo(() => {
+    if (tab === 'brand') return normalizeRows(brandCodes)
+    if (tab === 'category') return normalizeRows(categoryCodes)
+    if (tab === 'year') return normalizeRows(yearCodes)
+    return normalizeRows(seasonCodes)
+  }, [tab, brandCodes, categoryCodes, yearCodes, seasonCodes])
+
+  async function fetchAll() {
+    const [brandRes, categoryRes, yearRes, seasonRes] = await Promise.all([
+      supabase
+        .from('brand_codes')
+        .select('*')
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
+
+      supabase
+        .from('category_codes')
+        .select('*')
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
+
+      supabase
+        .from('year_codes')
+        .select('*')
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
+
+      supabase
+        .from('season_codes')
+        .select('*')
+        .order('sort_no', { ascending: true })
+        .order('code', { ascending: true }),
+    ])
+
+    setBrandCodes((brandRes.data || []) as BrandCode[])
+    setCategoryCodes((categoryRes.data || []) as CategoryCode[])
+    setYearCodes((yearRes.data || []) as YearCode[])
+    setSeasonCodes((seasonRes.data || []) as SeasonCode[])
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setForm({
+      sort_no: '',
+      code: '',
+      name: '',
+      note: '',
+      is_active: true,
     })
+  }
 
-    Object.keys(grouped).forEach((key) => {
-      grouped[key as ModelCodeType].sort(
-        (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
-      )
+  function startEdit(row: CodeRow) {
+    setEditingId(row.id)
+    setForm({
+      sort_no: String(row.sort_no ?? ''),
+      code: row.code || '',
+      name: row.name || '',
+      note: row.note || '',
+      is_active: row.is_active ?? true,
     })
+  }
 
-    return grouped
-  }, [modelCodes])
-
-  const addModelCode = async () => {
-    const code = newCode.trim()
-    const name = newName.trim()
-
-    if (!code) {
+  async function handleSave() {
+    if (!form.code.trim()) {
       alert('코드를 입력해 주세요.')
       return
     }
 
-    if (!name) {
-      alert('코드명을 입력해 주세요.')
-      return
-    }
-
-    if (
-      modelCodes.some(
-        (item) => item.code_type === newCodeType && item.code === code
-      )
-    ) {
-      alert('이미 등록된 코드입니다.')
-      return
-    }
-
     setIsSaving(true)
 
-    const supabase = createClient()
+    const tableName = getTableName(tab)
+    const nameColumn = getNameColumn(tab)
+    const noteColumn = getNoteColumn(tab)
 
-    const allCodesOfType = modelCodes.filter(
-      (c) => c.code_type === newCodeType
+    const payload = {
+      sort_no: form.sort_no === '' ? 0 : Number(form.sort_no),
+      code: form.code.trim().toUpperCase(),
+      [nameColumn]: form.name.trim() || null,
+      [noteColumn]: form.note.trim() || null,
+      is_active: form.is_active,
+      updated_at: new Date().toISOString(),
+    }
+
+    const result = editingId
+      ? await supabase.from(tableName).update(payload).eq('id', editingId)
+      : await supabase.from(tableName).insert(payload)
+
+    setIsSaving(false)
+
+    if (result.error) {
+      alert(`저장 실패\n\n${result.error.message}`)
+      return
+    }
+
+    resetForm()
+    await fetchAll()
+  }
+
+  async function handleDelete(row: CodeRow) {
+    const ok = window.confirm(
+      `${row.code} 코드를 삭제할까요?\n이미 모델명 생성에 사용한 코드라면 삭제하지 않는 것을 권장합니다.`
     )
 
-    const { data, error } = await supabase
-      .from('model_codes')
-      .insert({
-        code_type: newCodeType,
-        code,
-        name,
-        sort_order: allCodesOfType.length + 1,
-        is_active: true,
-      })
-      .select('*')
-      .single()
-
-    setIsSaving(false)
-
-    if (error) {
-      alert('코드 추가에 실패했습니다.')
-      console.error(error)
-      return
-    }
-
-    setModelCodes((prev) => [...prev, data])
-    setNewCode('')
-    setNewName('')
-  }
-
-  const updateModelCode = async (modelCode: ModelCode) => {
-    setIsSaving(true)
-
-    const supabase = createClient()
-
-    const { error } = await supabase
-      .from('model_codes')
-      .update({
-        code: modelCode.code,
-        name: modelCode.name,
-        sort_order: modelCode.sort_order || 0,
-        is_active: modelCode.is_active ?? true,
-      })
-      .eq('id', modelCode.id)
-
-    setIsSaving(false)
-
-    if (error) {
-      alert('저장에 실패했습니다.')
-      console.error(error)
-      return
-    }
-
-    alert('저장되었습니다.')
-  }
-
-  const deleteModelCode = async (id: string) => {
-    const ok = window.confirm('이 코드를 삭제할까요?')
     if (!ok) return
 
-    const supabase = createClient()
-
-    const { error } = await supabase.from('model_codes').delete().eq('id', id)
+    const { error } = await supabase
+      .from(getTableName(tab))
+      .delete()
+      .eq('id', row.id)
 
     if (error) {
-      alert('삭제에 실패했습니다.')
-      console.error(error)
+      alert(`삭제 실패\n\n${error.message}`)
       return
     }
 
-    setModelCodes((prev) => prev.filter((item) => item.id !== id))
+    await fetchAll()
   }
 
-  const updateLocalCode = (id: string, patch: Partial<ModelCode>) => {
-    setModelCodes((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...patch,
-            }
-          : item
-      )
-    )
+  async function toggleActive(row: CodeRow) {
+    const { error } = await supabase
+      .from(getTableName(tab))
+      .update({
+        is_active: !(row.is_active ?? true),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', row.id)
+
+    if (error) {
+      alert(`사용여부 변경 실패\n\n${error.message}`)
+      return
+    }
+
+    await fetchAll()
   }
+
+  const nameLabel =
+    tab === 'brand'
+      ? '구분'
+      : tab === 'category'
+        ? '카테고리명'
+        : tab === 'year'
+          ? '연도'
+          : '구분'
+
+  const noteLabel = tab === 'brand' ? '설명문' : '비고'
 
   return (
     <div className="space-y-5">
-      <Card>
-        <CardContent className="space-y-3 p-4">
-          <h2 className="font-semibold text-gray-900">새 코드 추가</h2>
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((item) => (
+          <Button
+            key={item.key}
+            type="button"
+            variant={tab === item.key ? 'default' : 'outline'}
+            onClick={() => {
+              setTab(item.key)
+              resetForm()
+            }}
+          >
+            {item.label}
+          </Button>
+        ))}
+      </div>
 
-          <div className="grid gap-3 sm:grid-cols-[150px_120px_2fr_auto]">
-            <Select value={newCodeType} onValueChange={(value) => setNewCodeType(value as ModelCodeType)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CODE_TYPES.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-4">
+          <h2 className="font-semibold text-gray-900">
+            {tabs.find((item) => item.key === tab)?.label} 등록/수정
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            모델명 자동 생성을 위한 기준 코드를 관리합니다.
+          </p>
+        </div>
 
-            <Input
-              value={newCode}
-              onChange={(e) => setNewCode(e.target.value)}
-              placeholder="예: 01"
-            />
+        <div className="grid gap-3 md:grid-cols-[100px_140px_1fr_1fr_120px]">
+          <Input
+            value={form.sort_no}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, sort_no: e.target.value }))
+            }
+            placeholder="NO"
+            type="number"
+          />
 
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="예: 화이트"
-            />
+          <Input
+            value={form.code}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                code: e.target.value.toUpperCase(),
+              }))
+            }
+            placeholder="코드"
+          />
 
-            <Button onClick={addModelCode} disabled={isSaving}>
-              <Plus className="mr-2 h-4 w-4" />
-              추가
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          <Input
+            value={form.name}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, name: e.target.value }))
+            }
+            placeholder={nameLabel}
+          />
 
-      {CODE_TYPES.map((type) => (
-        <section key={type.value} className="space-y-3">
-          <h2 className="text-lg font-semibold text-gray-900">{type.label}</h2>
+          <Input
+            value={form.note}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, note: e.target.value }))
+            }
+            placeholder={noteLabel}
+          />
 
-          {groupedCodes[type.value].length === 0 ? (
-            <p className="text-sm text-gray-500">등록된 코드가 없습니다.</p>
-          ) : (
-            <div className="space-y-3">
-              {groupedCodes[type.value].map((modelCode) => (
-                <Card key={modelCode.id}>
-                  <CardContent className="p-4">
-                    <div className="grid gap-3 sm:grid-cols-[100px_2fr_100px_auto_auto]">
-                      <Input
-                        value={modelCode.code || ''}
-                        onChange={(e) =>
-                          updateLocalCode(modelCode.id, {
-                            code: e.target.value,
-                          })
-                        }
-                        placeholder="코드"
-                      />
+          <Button type="button" onClick={handleSave} disabled={isSaving}>
+            {editingId ? '수정 저장' : '추가'}
+          </Button>
+        </div>
 
-                      <Input
-                        value={modelCode.name || ''}
-                        onChange={(e) =>
-                          updateLocalCode(modelCode.id, {
-                            name: e.target.value,
-                          })
-                        }
-                        placeholder="코드명"
-                      />
+        {editingId && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={resetForm}
+            className="mt-3"
+          >
+            수정 취소
+          </Button>
+        )}
+      </section>
 
-                      <Input
-                        type="number"
-                        value={modelCode.sort_order || 0}
-                        onChange={(e) =>
-                          updateLocalCode(modelCode.id, {
-                            sort_order: Number(e.target.value || 0),
-                          })
-                        }
-                        placeholder="정렬"
-                      />
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900">등록된 코드</h2>
 
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left">
+                <th className="p-3">NO</th>
+                <th className="p-3">코드</th>
+                <th className="p-3">{nameLabel}</th>
+                <th className="p-3">{noteLabel}</th>
+                <th className="p-3">사용</th>
+                <th className="p-3 text-right">관리</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {currentRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-6 text-center text-gray-500">
+                    등록된 코드가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                currentRows.map((row) => (
+                  <tr key={row.id} className="border-b">
+                    <td className="p-3">{row.sort_no ?? 0}</td>
+                    <td className="p-3 font-bold">{row.code}</td>
+                    <td className="p-3">{row.name || '-'}</td>
+                    <td className="p-3">{row.note || '-'}</td>
+                    <td className="p-3">
                       <Button
-                        variant="outline"
-                        onClick={() => updateModelCode(modelCode)}
-                        disabled={isSaving}
+                        type="button"
+                        size="sm"
+                        variant={row.is_active ? 'default' : 'outline'}
+                        onClick={() => toggleActive(row)}
                       >
-                        <Save className="mr-2 h-4 w-4" />
-                        저장
+                        {row.is_active ? '사용' : '미사용'}
                       </Button>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => startEdit(row)}
+                        >
+                          수정
+                        </Button>
 
-                      <Button
-                        variant="outline"
-                        onClick={() => deleteModelCode(modelCode.id)}
-                        disabled={isSaving}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </section>
-      ))}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDelete(row)}
+                        >
+                          삭제
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }
