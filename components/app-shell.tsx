@@ -16,6 +16,7 @@ import {
   X,
   BookOpen,
   Palette,
+  Package,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -35,6 +36,11 @@ const adminNavItems = [
   { title: '사이즈표', href: '/size-groups', icon: Ruler },
   { title: '스튜디오', href: '/studios', icon: Camera },
   { title: '출력 헤더 관리', href: '/print-headers', icon: FileCog },
+]
+
+const DevNavItems = [
+  { title: '상품 마스터', href: '/products', icon: Package },
+  { title: '모델코드관리', href: '/model-codes', icon: Package },
 ]
 
 const guideNavItem = {
@@ -99,6 +105,17 @@ export function AppShell({ children }: AppShellProps) {
             {adminNavItems.map(renderNavItem)}
           </div>
         </div>
+
+        <div className="mt-6 border-t pt-4">
+          <p className="px-3 pb-2 text-xs font-semibold text-gray-400">
+            In development
+          </p>
+
+          <div className="space-y-1">
+            {DevNavItems.map(renderNavItem)}
+          </div>
+        </div>
+
       </nav>
         <div className="shrink-0 border-t bg-white p-3">
           {renderNavItem(guideNavItem)}

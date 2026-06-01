@@ -1,4 +1,4 @@
-import { ModelCodeManager } from '@/components/model-code-manager'
+import ModelCodeManager from '@/components/model-code-manager'
 
 export default function ModelCodesPage() {
   return (
