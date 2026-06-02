@@ -236,6 +236,9 @@ export interface InboundBatch {
   memo?: string | null
   created_at?: string | null
   updated_at?: string | null
+  inventory_reflected?: boolean | null
+  inventory_reflected_at?: string | null
+  inventory_warehouse_id?: string | null
 }
 
 export interface InboundBatchQuantity {
@@ -378,6 +381,7 @@ export interface Inventory {
   note?: string | null
   created_at?: string | null
   updated_at?: string | null
+  work_date?: string | null
 }
 
 export interface InventoryLog {
@@ -398,4 +402,6 @@ export interface InventoryLog {
   source_id?: string | null
 
   created_at?: string | null
+  
+  work_date?: string | null
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Printer, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type {
@@ -15,6 +15,7 @@ import type {
   PrintColumnHeader,
   PrintHeader,
   SampleEntry,
+  Warehouse,
 } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -23,6 +24,13 @@ import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import { Download } from 'lucide-react'
 import { formatNumber } from '@/lib/format'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface InboundSheetClientProps {
   date: string
@@ -106,12 +114,31 @@ export function InboundSheetClient({
     inboundBatches[0]?.id || ''
   )
 
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [inventoryWarehouseId, setInventoryWarehouseId] = useState('')
+
   const getCurrentBatchTotal = () => {
     if (!selectedBatchId) return 0
 
     return batchQuantities
       .filter((item) => item.batch_id === selectedBatchId)
       .reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  }
+
+  const fetchWarehouses = async () => {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    setWarehouses((data || []) as Warehouse[])
   }
 
   const representative = samples[0]
@@ -130,6 +157,10 @@ export function InboundSheetClient({
       .filter(Boolean)
       .sort()
       .at(-1) || '-'
+
+    useEffect(() => {
+      fetchWarehouses()
+    }, [])
 
   const [inboundDate, setInboundDate] = useState(
     toKoreaDate(representative?.inbound_at) || ''
@@ -844,16 +875,165 @@ export function InboundSheetClient({
     alert('입고지연 처리되었습니다.')
   }
 
+  const reflectCurrentBatchToInventory = async () => {
+    if (!selectedBatchId) {
+      alert('입고 회차를 먼저 선택해 주세요.')
+      return false
+    }
+
+    if (!inventoryWarehouseId) {
+      alert('재고 반영 창고를 선택해 주세요.')
+      return false
+    }
+
+    const selectedBatch = batches.find((batch) => batch.id === selectedBatchId)
+
+    if (!selectedBatch) {
+      alert('선택된 입고 회차를 찾을 수 없습니다.')
+      return false
+    }
+
+    if (selectedBatch.inventory_reflected) {
+      alert('이미 재고에 반영된 입고 회차입니다.')
+      return false
+    }
+
+    const inventoryWorkDate =
+      selectedBatch.inbound_date ||
+      selectedBatch.created_at?.slice(0, 10) ||
+      new Date().toISOString().slice(0, 10)
+
+    const supabase = createClient()
+
+    const currentBatchRows = batchQuantities.filter(
+      (item) => item.batch_id === selectedBatchId && Number(item.qty || 0) > 0
+    )
+
+    if (currentBatchRows.length === 0) {
+      alert('재고에 반영할 입고수량이 없습니다.')
+      return false
+    }
+
+    for (const item of currentBatchRows) {
+      if (!item.korea_code || !item.color_code || !item.size_label) {
+        continue
+      }
+
+      const sku = `${item.korea_code}_${item.color_code}_${item.size_label}`
+      const reflectQty = Number(item.qty || 0)
+
+      const { data: existing } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('warehouse_id', inventoryWarehouseId)
+        .eq('sku', sku)
+        .maybeSingle()
+
+      const beforeQty = Number(existing?.qty || 0)
+      const afterQty = beforeQty + reflectQty
+
+      let inventoryId = existing?.id
+
+      if (existing) {
+        const { error } = await supabase
+          .from('inventory')
+          .update({
+            qty: afterQty,
+            work_date: inventoryWorkDate,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+
+        if (error) {
+          alert(`재고 반영 실패\n\n${error.message}`)
+          return false
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('inventory')
+          .insert({
+            warehouse_id: inventoryWarehouseId,
+            sku,
+            qty: afterQty,
+            work_date: inventoryWorkDate,
+            note: '입고관리 자동 반영',
+          })
+          .select('*')
+          .single()
+
+        if (error) {
+          alert(`재고 생성 실패\n\n${error.message}`)
+          return false
+        }
+
+        inventoryId = data.id
+      }
+
+      const { error: logError } = await supabase.from('inventory_logs').insert({
+        inventory_id: inventoryId,
+        warehouse_id: inventoryWarehouseId,
+        sku,
+        change_type: '입고반영',
+        change_qty: reflectQty,
+        before_qty: beforeQty,
+        after_qty: afterQty,
+        work_date: inventoryWorkDate,
+        reason: `${selectedBatch.batch_no}차 입고 반영`,
+        source_type: 'inbound_batch',
+        source_id: selectedBatchId,
+      })
+
+      if (logError) {
+        alert(`재고 로그 저장 실패\n\n${logError.message}`)
+        return false
+      }
+    }
+
+    const { error: batchError } = await supabase
+      .from('inbound_batches')
+      .update({
+        inventory_reflected: true,
+        inventory_reflected_at: new Date().toISOString(),
+        inventory_warehouse_id: inventoryWarehouseId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', selectedBatchId)
+
+    if (batchError) {
+      alert(`입고 회차 재고반영 상태 저장 실패\n\n${batchError.message}`)
+      return false
+    }
+
+    setBatches((prev) =>
+      prev.map((batch) =>
+        batch.id === selectedBatchId
+          ? {
+              ...batch,
+              inventory_reflected: true,
+              inventory_reflected_at: new Date().toISOString(),
+              inventory_warehouse_id: inventoryWarehouseId,
+            }
+          : batch
+      )
+    )
+
+    return true
+  }
+
   const handleCompleteInbound = async () => {
     const ok = window.confirm(
-      '입고완료 처리할까요?\n모든 회차의 누적 입고수량 기준으로 입고상태가 자동 저장됩니다.'
+      '입고완료 처리할까요?\n현재 선택된 입고 회차의 수량이 선택한 창고 재고에 반영됩니다.'
     )
 
     if (!ok) return
 
     await handleSaveQty()
 
-    alert('입고완료 처리가 완료되었습니다.')
+    const reflected = await reflectCurrentBatchToInventory()
+
+    if (!reflected) return
+
+    alert('입고완료 및 재고 반영이 완료되었습니다.')
   }
 
   return (
@@ -930,15 +1110,33 @@ export function InboundSheetClient({
               <Printer className="mr-2 h-4 w-4" />
               프린트
             </Button>
-
-            <Button variant="outline" onClick={handleSaveQty} disabled={isSaving}>
+            
+            {/*<Button variant="outline" onClick={handleSaveQty} disabled={isSaving}>
               <Save className="mr-2 h-4 w-4" />
               수량 저장
-            </Button>
+            </Button>*/}
+            
 
             <Button variant="outline" onClick={handleDelay} disabled={isSaving}>
               입고지연
             </Button>
+
+            <Select
+                value={inventoryWarehouseId}
+                onValueChange={setInventoryWarehouseId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="창고 선택" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {warehouses.map((warehouse) => (
+                    <SelectItem key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
             <Button
               onClick={handleCompleteInbound}
@@ -959,7 +1157,7 @@ export function InboundSheetClient({
               </div>
 
               <div>
-                <p className="text-xs text-gray-500">입고예정일</p>
+                <p className="text-xs text-gray-500">입고일</p>
                 <input
                   type="date"
                   value={inboundDate}

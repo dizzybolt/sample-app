@@ -216,6 +216,8 @@ export function InventoryManager() {
 
     setIsSaving(true)
 
+    const uploadWorkDate = new Date().toISOString().slice(0, 10)
+
     let successCount = 0
     let failCount = 0
 
@@ -267,6 +269,7 @@ export function InventoryManager() {
             .update({
               qty: afterQty,
               note: uploadNote || null,
+              work_date: uploadWorkDate,
               updated_at: new Date().toISOString(),
             })
             .eq('id', existing.id)
@@ -301,6 +304,7 @@ export function InventoryManager() {
             warehouse_id: targetWarehouse.id,
             sku: uploadSku,
             qty: uploadQty,
+            work_date: uploadWorkDate,
             note: uploadNote || null,
           })
           .select('*')
@@ -319,6 +323,7 @@ export function InventoryManager() {
           change_qty: uploadQty,
           before_qty: 0,
           after_qty: uploadQty,
+          work_date: uploadWorkDate,
           reason: uploadNote || '엑셀 일괄 등록',
           source_type: 'excel',
         })
@@ -507,11 +512,11 @@ export function InventoryManager() {
                     <td className="p-3">{getWarehouseName(item.warehouse_id)}</td>
                     <td className="p-3 font-medium">{item.sku}</td>
                     <td className="p-3 text-right font-bold">
-                      {formatNumber(item.qty)}개
+                      {formatNumber(item.qty)}
                     </td>
                     <td className="p-3">{item.note || '-'}</td>
                     <td className="p-3">
-                      {item.updated_at?.slice(0, 10) || '-'}
+                      {item.work_date || item.updated_at?.slice(0, 10) || '-'}
                     </td>
 
                     <td className="p-3">
@@ -596,7 +601,7 @@ export function InventoryManager() {
                 inventoryLogs.map((log) => (
                   <tr key={log.id} className="border-b">
                     <td className="p-3">
-                      {log.created_at?.slice(0, 16).replace('T', ' ') || '-'}
+                      {log.work_date || log.created_at?.slice(0, 10) || '-'}
                     </td>
                     <td className="p-3">{log.change_type}</td>
                     <td className="p-3 text-right font-bold">
