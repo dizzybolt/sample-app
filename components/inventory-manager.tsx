@@ -1,5 +1,6 @@
 'use client'
 
+import * as XLSX from 'xlsx'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Inventory, Warehouse } from '@/lib/types'
@@ -30,6 +31,11 @@ export function InventoryManager() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  const [bulkUploadMode, setBulkUploadMode] = useState<'replace' | 'adjust'>(
+  'replace'
+  )
 
   useEffect(() => {
     fetchData()
@@ -68,6 +74,15 @@ export function InventoryManager() {
 
   function getWarehouseName(id: string) {
     return warehouses.find((item) => item.id === id)?.name || '-'
+  }
+
+  function handleEditInventory(item: Inventory) {
+    setEditingId(item.id)
+
+    setWarehouseId(item.warehouse_id)
+    setSku(item.sku)
+    setQty(String(item.qty || 0))
+    setReason(item.note || '')
   }
 
   async function handleSaveInventory() {
@@ -145,7 +160,7 @@ export function InventoryManager() {
       inventory_id: inventoryId,
       warehouse_id: warehouseId,
       sku: normalizedSku,
-      change_type: existing ? '수정' : '신규등록',
+      change_type: existing ? '재고조정' : '신규등록',
       change_qty: changeQty,
       before_qty: beforeQty,
       after_qty: nextQty,
@@ -157,9 +172,176 @@ export function InventoryManager() {
 
     alert('재고가 저장되었습니다.')
 
+    setEditingId(null)
     setSku('')
     setQty('')
     setReason('')
+
+    await fetchData()
+  }
+
+  async function handleBulkUploadInventory(file: File) {
+    const buffer = await file.arrayBuffer()
+    const workbook = XLSX.read(buffer, { type: 'array' })
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, {
+      defval: '',
+    })
+
+    if (rows.length === 0) {
+      alert('업로드할 재고 데이터가 없습니다.')
+      return
+    }
+
+    setIsSaving(true)
+
+    let successCount = 0
+    let failCount = 0
+
+    for (const row of rows) {
+      const warehouseName = String(row.창고명 || row.warehouse_name || '').trim()
+      const warehouseCode = String(row.창고코드 || row.warehouse_code || '').trim()
+      const uploadSku = String(row.SKU || row.sku || '').trim()
+      const uploadQty = Number(String(row.수량 || row.qty || '0').replaceAll(',', ''))
+      const uploadNote = String(row.비고 || row.note || '').trim()
+
+      if (!uploadSku || Number.isNaN(uploadQty)) {
+        failCount += 1
+        continue
+      }
+
+      const targetWarehouse = warehouses.find((warehouse) => {
+        if (warehouseName && warehouse.name === warehouseName) return true
+        if (warehouseCode && warehouse.code === warehouseCode) return true
+        return false
+      })
+
+      if (!targetWarehouse) {
+        failCount += 1
+        continue
+      }
+
+      const { data: existing } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('warehouse_id', targetWarehouse.id)
+        .eq('sku', uploadSku)
+        .maybeSingle()
+
+      const beforeQty = Number(existing?.qty || 0)
+
+        if (existing) {
+          const afterQty =
+            bulkUploadMode === 'replace'
+              ? uploadQty
+              : beforeQty + uploadQty
+
+          const changeQty =
+            bulkUploadMode === 'replace'
+              ? uploadQty - beforeQty
+              : uploadQty
+
+          const { error } = await supabase
+            .from('inventory')
+            .update({
+              qty: afterQty,
+              note: uploadNote || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id)
+
+          if (error) {
+            failCount += 1
+            continue
+          }
+
+          await supabase.from('inventory_logs').insert({
+            inventory_id: existing.id,
+            warehouse_id: targetWarehouse.id,
+            sku: uploadSku,
+            change_type:
+              bulkUploadMode === 'replace'
+                ? '엑셀수량변경'
+                : '엑셀수량조정',
+            change_qty: changeQty,
+            before_qty: beforeQty,
+            after_qty: afterQty,
+            reason:
+              uploadNote ||
+              (bulkUploadMode === 'replace'
+                ? '엑셀 수량 변경'
+                : '엑셀 수량 조정'),
+            source_type: 'excel',
+          })
+        } else {
+        const { data, error } = await supabase
+          .from('inventory')
+          .insert({
+            warehouse_id: targetWarehouse.id,
+            sku: uploadSku,
+            qty: uploadQty,
+            note: uploadNote || null,
+          })
+          .select('*')
+          .single()
+
+        if (error) {
+          failCount += 1
+          continue
+        }
+
+        await supabase.from('inventory_logs').insert({
+          inventory_id: data.id,
+          warehouse_id: targetWarehouse.id,
+          sku: uploadSku,
+          change_type: '엑셀일괄등록',
+          change_qty: uploadQty,
+          before_qty: 0,
+          after_qty: uploadQty,
+          reason: uploadNote || '엑셀 일괄 등록',
+          source_type: 'excel',
+        })
+      }
+
+      successCount += 1
+    }
+
+    setIsSaving(false)
+
+    alert(`재고 일괄 업로드 완료\n\n성공 ${successCount}건\n실패 ${failCount}건`)
+
+    await fetchData()
+  }
+
+  async function handleDeleteInventory(item: Inventory) {
+    const ok = window.confirm(
+      `${item.sku} 재고를 삭제할까요?`
+    )
+
+    if (!ok) return
+
+    await supabase.from('inventory_logs').insert({
+      inventory_id: item.id,
+      warehouse_id: item.warehouse_id,
+      sku: item.sku,
+      change_type: '삭제',
+      change_qty: -(item.qty || 0),
+      before_qty: item.qty || 0,
+      after_qty: 0,
+      reason: '재고 삭제',
+      source_type: 'manual',
+    })
+
+    const { error } = await supabase
+      .from('inventory')
+      .delete()
+      .eq('id', item.id)
+
+    if (error) {
+      alert(`삭제 실패\n\n${error.message}`)
+      return
+    }
 
     await fetchData()
   }
@@ -168,6 +350,12 @@ export function InventoryManager() {
     <div className="space-y-6">
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-gray-900">재고 등록/수정</h2>
+
+        {editingId && (
+          <p className="mt-2 text-sm text-blue-600">
+            재고 수정 모드
+          </p>
+        )}
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1.5fr_2fr_1fr_2fr_auto]">
           <Select value={warehouseId} onValueChange={setWarehouseId}>
@@ -214,6 +402,55 @@ export function InventoryManager() {
       </section>
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900">엑셀 일괄 등록/수정</h2>
+
+        <p className="mt-1 text-sm text-gray-500">
+          창고명 또는 창고코드와 SKU를 기준으로 재고를 신규 등록하거나 수정합니다.
+        </p>
+
+        <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+          <p className="font-medium text-gray-900">엑셀 헤더</p>
+          <p className="mt-1">창고명, SKU, 수량, 비고</p>
+          <p className="mt-1 text-xs text-gray-500">
+            창고명 대신 창고코드를 사용할 경우: 창고코드, SKU, 수량, 비고
+          </p>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={bulkUploadMode === 'replace' ? 'default' : 'outline'}
+            onClick={() => setBulkUploadMode('replace')}
+          >
+            수량 변경
+          </Button>
+
+          <Button
+            type="button"
+            variant={bulkUploadMode === 'adjust' ? 'default' : 'outline'}
+            onClick={() => setBulkUploadMode('adjust')}
+          >
+            수량 조정
+          </Button>
+        </div>
+
+        <div className="mt-4">
+          <Input
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            disabled={isSaving}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+
+              handleBulkUploadInventory(file)
+              e.target.value = ''
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="font-semibold text-gray-900">재고 목록</h2>
 
@@ -233,7 +470,7 @@ export function InventoryManager() {
                 <th className="p-3">SKU</th>
                 <th className="p-3 text-right">현재고</th>
                 <th className="p-3">비고</th>
-                <th className="p-3">수정일</th>
+                <th className="p-3 text-right">관리</th>
               </tr>
             </thead>
 
@@ -255,6 +492,28 @@ export function InventoryManager() {
                     <td className="p-3">{item.note || '-'}</td>
                     <td className="p-3">
                       {item.updated_at?.slice(0, 10) || '-'}
+                    </td>
+
+                    <td className="p-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditInventory(item)}
+                        >
+                          수정
+                        </Button>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeleteInventory(item)}
+                        >
+                          삭제
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
