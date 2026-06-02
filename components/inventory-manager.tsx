@@ -3,7 +3,7 @@
 import * as XLSX from 'xlsx'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Inventory, Warehouse } from '@/lib/types'
+import type { Inventory, InventoryLog, Warehouse } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -37,9 +37,29 @@ export function InventoryManager() {
   'replace'
   )
 
+  const [selectedLogSku, setSelectedLogSku] = useState('')
+  const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([])
+
   useEffect(() => {
     fetchData()
   }, [])
+
+  async function fetchInventoryLogs(sku: string) {
+    setSelectedLogSku(sku)
+
+    const { data, error } = await supabase
+      .from('inventory_logs')
+      .select('*')
+      .eq('sku', sku)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      alert(`로그 조회 실패\n\n${error.message}`)
+      return
+    }
+
+    setInventoryLogs((data || []) as InventoryLog[])
+  }
 
   async function fetchData() {
     const [warehouseRes, inventoryRes] = await Promise.all([
@@ -422,7 +442,7 @@ export function InventoryManager() {
             variant={bulkUploadMode === 'replace' ? 'default' : 'outline'}
             onClick={() => setBulkUploadMode('replace')}
           >
-            수량 변경
+            수량 변경(재고 전체 교체)
           </Button>
 
           <Button
@@ -430,7 +450,7 @@ export function InventoryManager() {
             variant={bulkUploadMode === 'adjust' ? 'default' : 'outline'}
             onClick={() => setBulkUploadMode('adjust')}
           >
-            수량 조정
+            수량 조정(기존 재고 ± 업로드 재고)
           </Button>
         </div>
 
@@ -500,6 +520,15 @@ export function InventoryManager() {
                           type="button"
                           size="sm"
                           variant="outline"
+                          onClick={() => fetchInventoryLogs(item.sku)}
+                        >
+                          로그
+                        </Button>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
                           onClick={() => handleEditInventory(item)}
                         >
                           수정
@@ -522,6 +551,72 @@ export function InventoryManager() {
           </table>
         </div>
       </section>
+
+    {selectedLogSku && (
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900">
+            재고 변경 로그 - {selectedLogSku}
+          </h2>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSelectedLogSku('')
+              setInventoryLogs([])
+            }}
+          >
+            닫기
+          </Button>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left">
+                <th className="p-3">일자</th>
+                <th className="p-3">구분</th>
+                <th className="p-3 text-right">변경수량</th>
+                <th className="p-3 text-right">변경 전</th>
+                <th className="p-3 text-right">변경 후</th>
+                <th className="p-3">사유</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {inventoryLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-6 text-center text-gray-500">
+                    로그가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                inventoryLogs.map((log) => (
+                  <tr key={log.id} className="border-b">
+                    <td className="p-3">
+                      {log.created_at?.slice(0, 16).replace('T', ' ') || '-'}
+                    </td>
+                    <td className="p-3">{log.change_type}</td>
+                    <td className="p-3 text-right font-bold">
+                      {formatNumber(log.change_qty)}
+                    </td>
+                    <td className="p-3 text-right">
+                      {formatNumber(log.before_qty)}
+                    </td>
+                    <td className="p-3 text-right">
+                      {formatNumber(log.after_qty)}
+                    </td>
+                    <td className="p-3">{log.reason || '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    )}      
     </div>
   )
 }
