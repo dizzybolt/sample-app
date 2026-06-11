@@ -35,3 +35,28 @@
   - 스튜디오 현황
   - 입고 현황
   - 샘플등록 현황
+
+## Inventory Flow
+
+### Manual Inventory
+수동 등록/수정
+→ inventory 저장
+→ inventory_logs 기록
+
+### Excel Inventory Upload
+엑셀 업로드
+→ 창고 + SKU 기준 기존 재고 확인
+→ 기존 재고 있음: 수량 변경 또는 수량 조정
+→ 기존 재고 없음: 신규 등록
+→ inventory_logs 기록
+
+### Inbound to Inventory
+입고상세에서 회차별 입고수량 입력
+→ 재고 반영 창고 선택
+→ 입고완료
+→ 선택 회차 수량을 inventory에 반영
+→ inventory_logs 기록
+→ inbound_batches.inventory_reflected = true
+
+### Duplicate Prevention
+- 입고회차가 이미 inventory_reflected = true 이면 재고에 다시 반영하지 않는다.

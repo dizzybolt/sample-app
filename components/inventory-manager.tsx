@@ -47,8 +47,12 @@ export function InventoryManager() {
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([])
 
   useEffect(() => {
-    fetchData()
+    fetchWarehouses()
   }, [])
+
+  useEffect(() => {
+    searchInventory()
+  }, [currentPage])
 
   async function fetchInventoryLogs(sku: string) {
     setSelectedLogSku(sku)
@@ -86,6 +90,20 @@ export function InventoryManager() {
     setTotalCount(inventoryRes.count || 0)
   }
 
+  async function fetchWarehouses() {
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (error) {
+      alert(`창고 조회 실패\n\n${error.message}`)
+      return
+    }
+
+    setWarehouses((data || []) as Warehouse[])
+  }
+
   async function searchInventory() {
     const keyword = searchTerm.trim()
 
@@ -93,10 +111,30 @@ export function InventoryManager() {
       .from('inventory')
       .select('*', { count: 'exact' })
       .order('updated_at', { ascending: false })
-      .limit(300)
+      .range(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize - 1
+      )
+      .limit(100)
 
     if (keyword) {
-      query = query.ilike('sku', `%${keyword}%`)
+      const keywords = keyword
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean)
+
+      if (keywords.length === 1) {
+        query = query.ilike(
+          'sku',
+          `%${keywords[0]}%`
+        )
+      } else {
+        const conditions = keywords
+          .map((value) => `sku.ilike.%${value}%`)
+          .join(',')
+
+        query = query.or(conditions)
+      }
     }
 
     if (warehouseId) {
@@ -603,7 +641,7 @@ export function InventoryManager() {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="SKU 검색"
+                placeholder="SKU 검색 (, 로 복수검색)"
                 className={searchTerm ? 'pr-9' : ''}
               />
 
@@ -631,6 +669,14 @@ export function InventoryManager() {
               }}
             >
               검색
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={downloadInventoryExcel}
+            >
+              엑셀
             </Button>
           </div>
         </div>
@@ -772,4 +818,46 @@ export function InventoryManager() {
     )}      
     </div>
   )
+    function downloadInventoryExcel() {
+      const rows = filteredInventories.map(
+        (item, index) => ({
+          NO: index + 1,
+
+          창고:
+            warehouses.find(
+              (w) => w.id === item.warehouse_id
+            )?.name || '',
+
+          SKU: item.sku,
+
+          재고수량: item.qty,
+
+          기준일:
+            item.work_date ||
+            item.updated_at?.slice(0, 10) ||
+            '',
+
+          비고: item.note || '',
+        })
+      )
+
+      const worksheet =
+        XLSX.utils.json_to_sheet(rows)
+
+      const workbook =
+        XLSX.utils.book_new()
+
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheet,
+        '재고목록'
+      )
+
+      const fileName =
+        searchTerm.trim()
+          ? `재고검색결과.xlsx`
+          : `재고목록.xlsx`
+
+      XLSX.writeFile(workbook, fileName)
+    }
 }
