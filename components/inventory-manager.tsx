@@ -407,19 +407,48 @@ export function InventoryManager() {
         )}
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1.5fr_2fr_1fr_2fr_auto]">
-          <Select value={warehouseId} onValueChange={setWarehouseId}>
-            <SelectTrigger>
-              <SelectValue placeholder="창고 선택" />
-            </SelectTrigger>
+          <div className="relative">
+            <Select
+              value={warehouseId}
+              onValueChange={setWarehouseId}
+            >
+              <SelectTrigger
+                className={
+                  warehouseId
+                    ? 'w-full pr-10 [&>svg]:hidden'
+                    : 'w-full'
+                }
+              >
+                <SelectValue placeholder="창고 선택" />
+              </SelectTrigger>
 
-            <SelectContent>
-              {warehouses.map((warehouse) => (
-                <SelectItem key={warehouse.id} value={warehouse.id}>
-                  {warehouse.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              <SelectContent>
+                {warehouses.map((warehouse) => (
+                  <SelectItem
+                    key={warehouse.id}
+                    value={warehouse.id}
+                  >
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {warehouseId && (
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-gray-400 hover:text-red-500"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+
+                  setWarehouseId('')
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
           <Input
             value={sku}
@@ -500,12 +529,10 @@ export function InventoryManager() {
       </section>
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          {/* 좌측 */}
-          <div className="flex items-center gap-4">
-            <h2 className="font-semibold text-gray-900">
-              재고 목록
-            </h2>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* 상단: 제목 / 총 건수 / 페이지 */}
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-semibold text-gray-900">재고 목록</h2>
 
             <p className="text-sm text-gray-500">
               총 {totalCount.toLocaleString()}건
@@ -517,9 +544,7 @@ export function InventoryManager() {
                 variant="outline"
                 size="sm"
                 disabled={currentPage === 1}
-                onClick={() => {
-                  setCurrentPage((prev) => Math.max(1, prev - 1))
-                }}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               >
                 이전
               </Button>
@@ -532,12 +557,8 @@ export function InventoryManager() {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={
-                  currentPage >= Math.ceil(totalCount / pageSize)
-                }
-                onClick={() => {
-                  setCurrentPage((prev) => prev + 1)
-                }}
+                disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                onClick={() => setCurrentPage((prev) => prev + 1)}
               >
                 다음
               </Button>
@@ -545,17 +566,69 @@ export function InventoryManager() {
           </div>
 
           {/* 우측 */}
-          <div className="flex gap-2 w-[420px]">
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="SKU 검색"
-            />
+          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-[620px]">
+            <div className="relative w-[180px]">
+              <Select value={warehouseId} onValueChange={setWarehouseId}>
+                <SelectTrigger className={warehouseId ? 'w-full pr-10 [&>svg]:hidden' : 'w-full'}>
+                  <SelectValue placeholder="전체 창고" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {warehouses.map((warehouse) => (
+                    <SelectItem key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {warehouseId && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-gray-400 hover:text-red-500"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setWarehouseId('')
+                    setCurrentPage(1)
+                    fetchData()
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="relative flex-1">
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="SKU 검색"
+                className={searchTerm ? 'pr-9' : ''}
+              />
+
+              {searchTerm && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-gray-400 hover:text-red-500"
+                  onClick={() => {
+                    setSearchTerm('')
+                    setCurrentPage(1)
+                    fetchData()
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
 
             <Button
               type="button"
               variant="outline"
-              onClick={searchInventory}
+              onClick={() => {
+                setCurrentPage(1)
+                searchInventory()
+              }}
             >
               검색
             </Button>
