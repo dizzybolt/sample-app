@@ -30,6 +30,12 @@ export function InventoryManager() {
   const [reason, setReason] = useState('')
 
   const [searchTerm, setSearchTerm] = useState('')
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 100
+
+  const [totalCount, setTotalCount] = useState(0)
+
   const [isSaving, setIsSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -70,27 +76,45 @@ export function InventoryManager() {
 
       supabase
         .from('inventory')
-        .select('*')
-        .order('updated_at', { ascending: false }),
+        .select('*', { count: 'exact' })
+        .order('updated_at', { ascending: false })
+        .range((currentPage - 1) * pageSize, currentPage * pageSize - 1)
     ])
 
     setWarehouses((warehouseRes.data || []) as Warehouse[])
     setInventories((inventoryRes.data || []) as Inventory[])
+    setTotalCount(inventoryRes.count || 0)
   }
 
-  const filteredInventories = useMemo(() => {
-    const keyword = searchTerm.trim().toLowerCase()
+  async function searchInventory() {
+    const keyword = searchTerm.trim()
 
-    return inventories.filter((item) => {
-      const matchesKeyword =
-        !keyword || item.sku.toLowerCase().includes(keyword)
+    let query = supabase
+      .from('inventory')
+      .select('*', { count: 'exact' })
+      .order('updated_at', { ascending: false })
+      .limit(300)
 
-      const matchesWarehouse =
-        !warehouseId || item.warehouse_id === warehouseId
+    if (keyword) {
+      query = query.ilike('sku', `%${keyword}%`)
+    }
 
-      return matchesKeyword && matchesWarehouse
-    })
-  }, [inventories, searchTerm, warehouseId])
+    if (warehouseId) {
+      query = query.eq('warehouse_id', warehouseId)
+    }
+
+    const { data, error, count } = await query
+
+    if (error) {
+      alert(`재고 검색 실패\n\n${error.message}`)
+      return
+    }
+
+      setInventories((data || []) as Inventory[])
+      setTotalCount(count || 0)
+  }
+
+  const filteredInventories = inventories
 
   function getWarehouseName(id: string) {
     return warehouses.find((item) => item.id === id)?.name || '-'
@@ -476,48 +500,99 @@ export function InventoryManager() {
       </section>
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="font-semibold text-gray-900">재고 목록</h2>
+        <div className="flex items-center justify-between gap-4">
+          {/* 좌측 */}
+          <div className="flex items-center gap-4">
+            <h2 className="font-semibold text-gray-900">
+              재고 목록
+            </h2>
 
-          <Input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="SKU 검색"
-            className="sm:max-w-xs"
-          />
+            <p className="text-sm text-gray-500">
+              총 {totalCount.toLocaleString()}건
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => {
+                  setCurrentPage((prev) => Math.max(1, prev - 1))
+                }}
+              >
+                이전
+              </Button>
+
+              <span className="text-sm text-gray-500">
+                {currentPage} / {Math.max(1, Math.ceil(totalCount / pageSize))}
+              </span>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={
+                  currentPage >= Math.ceil(totalCount / pageSize)
+                }
+                onClick={() => {
+                  setCurrentPage((prev) => prev + 1)
+                }}
+              >
+                다음
+              </Button>
+            </div>
+          </div>
+
+          {/* 우측 */}
+          <div className="flex gap-2 w-[420px]">
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="SKU 검색"
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={searchInventory}
+            >
+              검색
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-left">
-                <th className="p-3">창고</th>
-                <th className="p-3">SKU</th>
-                <th className="p-3 text-right">현재고</th>
-                <th className="p-3">비고</th>
-                <th className="p-3 text-right">관리</th>
+                <th className="p-3 text-center">NO</th>
+                <th className="p-3 text-center">창고</th>
+                <th className="p-3 text-center">SKU</th>
+                <th className="p-3 text-center">현재고</th>
+                <th className="p-3 text-center">최근수정일</th>
+                <th className="p-3 text-left">비고</th>
               </tr>
             </thead>
 
             <tbody>
               {filteredInventories.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-6 text-center text-gray-500">
+                  <td colSpan={6} className="p-6 text-center text-gray-500">
                     등록된 재고가 없습니다.
                   </td>
                 </tr>
               ) : (
-                filteredInventories.map((item) => (
+                filteredInventories.map((item, index) => (
                   <tr key={item.id} className="border-b">
-                    <td className="p-3">{getWarehouseName(item.warehouse_id)}</td>
-                    <td className="p-3 font-medium">{item.sku}</td>
-                    <td className="p-3 text-right font-bold">
+                    <td className="p-3 text-center">{index + 1}</td>
+                    <td className="p-3 text-center">{getWarehouseName(item.warehouse_id)}</td>
+                    <td className="p-3 text-center font-medium">{item.sku}</td>
+                    <td className="p-3 text-center font-bold">
                       {formatNumber(item.qty)}
                     </td>
-                    <td className="p-3">{item.note || '-'}</td>
-                    <td className="p-3">
-                      {item.work_date || item.updated_at?.slice(0, 10) || '-'}
-                    </td>
+                    <td className="p-3 text-center">{item.work_date || item.updated_at?.slice(0, 10) || '-'}</td>
+                    <td className="p-3 text-left">{item.note || '-'}</td>
 
                     <td className="p-3">
                       <div className="flex justify-end gap-2">
