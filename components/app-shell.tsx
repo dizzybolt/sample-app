@@ -41,19 +41,15 @@ const menuSections = [
     title: '상품관리',
     items: [
       { title: '아이템카드', href: '/item-cards', icon: IdCard },
+      { title: 'SKU 매핑관리', href: '/sku-mappings', icon: Wrench },
     ],
   },
   {
     key: 'inventory',
     title: '재고관리',
     items: [
-      { title: '창고관리', href: '/warehouses', icon: Package },
       { title: '재고관리', href: '/inventory', icon: Package },
-      {
-        title: '재고 등록/수정',
-        href: '/inventory-adjustments',
-        icon: Package,
-      },
+      { title: '창고관리', href: '/warehouses', icon: Wrench },
     ],
   },
   {
@@ -65,7 +61,8 @@ const menuSections = [
       { title: '스튜디오', href: '/studios', icon: Camera },
       { title: '출력 헤더 관리', href: '/print-headers', icon: FileCog },
       { title: '상품 마스터', href: '/products', icon: Package },
-      { title: '모델코드관리', href: '/model-codes', icon: Package },
+      { title: '모델코드관리', href: '/model-codes', icon: Wrench },
+      { title: '이미지관리', href: '/product-images', icon: FileText },
     ],
   },
   {
@@ -73,11 +70,7 @@ const menuSections = [
     title: 'Utility',
     items: [
       //* { title: '유틸리티', href: '/utility', icon: Wrench }, *//
-      {
-        title: '구성상품 생성기',
-        href: '/utility/bundle-builder',
-        icon: Wrench,
-      },
+      { title: '구성상품 생성기', href: '/utility/bundle-builder', icon: FileCog, },
     ],
   },
   {

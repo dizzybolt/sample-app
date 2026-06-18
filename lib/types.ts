@@ -405,3 +405,41 @@ export interface InventoryLog {
   
   work_date?: string | null
 }
+
+export interface SkuMapping {
+  id: string
+
+  item_no: string
+  single_no: string
+
+  sku: string
+
+  model_name: string
+  color_code: string
+  color_name?: string | null
+
+  size_code: string
+
+  memo?: string | null
+
+  is_active: boolean
+
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductImage {
+  id: string
+
+  model_name: string
+  image_url: string
+
+  file_name?: string | null
+  ftp_path?: string | null
+  memo?: string | null
+
+  is_active: boolean
+
+  created_at: string
+  updated_at: string
+}
