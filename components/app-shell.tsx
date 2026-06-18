@@ -17,6 +17,7 @@ import {
   BookOpen,
   Palette,
   Package,
+  Wrench,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -39,6 +40,7 @@ const adminNavItems = [
 ]
 
 const DevNavItems = [
+  { title: '유틸리티', href: '/utility', icon: Wrench },
   { title: '상품 마스터', href: '/products', icon: Package },
   { title: '모델코드관리', href: '/model-codes', icon: Package },
   { title: '창고관리', href: '/warehouses', icon: Package },
