@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { SkuMapping } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { batchUpsert,type BulkProgress } from '@/lib/bulk-upload'
 
 const pageSize = 100
 
@@ -13,9 +14,31 @@ function formatSingleNo(value: string) {
   return value.trim().padStart(4, '0')
 }
 
+function normalizeSizeForSku(size: string) {
+  const value = String(size || '').trim().toUpperCase()
+
+  if (value === 'FREE') return 'F'
+
+  return value
+}
+
+function normalizeSkuForMatching(sku: string) {
+  const parts = String(sku || '').trim().split('_')
+
+  if (parts.length < 3) return sku.trim()
+
+  const size = parts[parts.length - 1]
+  parts[parts.length - 1] = normalizeSizeForSku(size)
+
+  return parts.join('_')
+}
+
 function buildSku(modelName: string, colorCode: string, sizeCode: string) {
-  if (!modelName || !colorCode || !sizeCode) return ''
-  return `${modelName.trim()}_${colorCode.trim()}_${sizeCode.trim()}`
+  const normalizedSize = normalizeSizeForSku(sizeCode)
+
+  if (!modelName || !colorCode || !normalizedSize) return ''
+
+  return `${modelName.trim()}_${colorCode.trim()}_${normalizedSize}`
 }
 
 export function SkuMappingManager() {
@@ -36,6 +59,9 @@ export function SkuMappingManager() {
   const [colorName, setColorName] = useState('')
   const [sizeCode, setSizeCode] = useState('')
   const [memo, setMemo] = useState('')
+
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<BulkProgress | null>(null)
 
   useEffect(() => {
     searchMappings()
@@ -125,7 +151,9 @@ export function SkuMappingManager() {
       return
     }
 
-    const nextSku = sku.trim() || buildSku(modelName, colorCode, sizeCode)
+      const nextSku = normalizeSkuForMatching(
+        sku.trim() || buildSku(modelName, colorCode, sizeCode)
+      )
 
     if (!nextSku) {
       alert('SKU를 생성할 수 없습니다.')
@@ -197,72 +225,93 @@ export function SkuMappingManager() {
       return
     }
 
-    setIsSaving(true)
+    const uploadRows = rows
+      .map((row) => {
+        const excelItemNo = String(row.품번번호 || row.품번넘버 || row.item_no || '').trim()
+        const excelSingleNo = formatSingleNo(
+          String(row.단품번호 || row.단품넘버 || row.single_no || '').trim()
+        )
+        const excelModelName = String(row.모델명 || row.model_name || '').trim()
+        const excelColorCode = String(row.색상코드 || row.color_code || '').trim()
+        const excelColorName = String(row.색상명 || row.color_name || '').trim()
+        const excelSizeCode = String(row.사이즈 || row.size_code || '').trim()
+        const rawExcelSku =
+          String(row.SKU || row.sku || '').trim() ||
+          buildSku(excelModelName, excelColorCode, excelSizeCode)
 
-    let successCount = 0
-    let failCount = 0
+        const excelSku = normalizeSkuForMatching(rawExcelSku)
+        const excelMemo = String(row.비고 || row.memo || '').trim()
 
-    for (const row of rows) {
-      const excelItemNo = String(row.품번번호 || row.품번넘버 || row.item_no || '').trim()
-      const excelSingleNo = formatSingleNo(
-        String(row.단품번호 || row.단품넘버 || row.single_no || '').trim()
-      )
-      const excelModelName = String(row.모델명 || row.model_name || '').trim()
-      const excelColorCode = String(row.색상코드 || row.color_code || '').trim()
-      const excelColorName = String(row.색상명 || row.color_name || '').trim()
-      const excelSizeCode = String(row.사이즈 || row.size_code || '').trim()
-      const excelSku =
-        String(row.SKU || row.sku || '').trim() ||
-        buildSku(excelModelName, excelColorCode, excelSizeCode)
-      const excelMemo = String(row.비고 || row.memo || '').trim()
+        if (
+          !excelItemNo ||
+          !excelSingleNo ||
+          !excelSku ||
+          !excelModelName ||
+          !excelColorCode ||
+          !excelSizeCode
+        ) {
+          return null
+        }
 
-      if (
-        !excelItemNo ||
-        !excelSingleNo ||
-        !excelSku ||
-        !excelModelName ||
-        !excelColorCode ||
-        !excelSizeCode
-      ) {
-        failCount += 1
-        continue
-      }
+        return {
+          item_no: excelItemNo,
+          single_no: excelSingleNo,
+          sku: excelSku,
+          model_name: excelModelName,
+          color_code: excelColorCode,
+          color_name: excelColorName || null,
+          size_code: excelSizeCode,
+          memo: excelMemo || null,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }
+      })
+      .filter(Boolean)
 
-      const payload = {
-        item_no: excelItemNo,
-        single_no: excelSingleNo,
-        sku: excelSku,
-        model_name: excelModelName,
-        color_code: excelColorCode,
-        color_name: excelColorName || null,
-        size_code: excelSizeCode,
-        memo: excelMemo || null,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      }
+    const uniqueRows = Array.from(
+      new Map(
+        uploadRows.map((row) => [
+          `${row!.item_no}_${row!.single_no}`,
+          row,
+        ])
+      ).values()
+    )
 
-      const { data: existing } = await supabase
-        .from('sku_mappings')
-        .select('id')
-        .eq('item_no', excelItemNo)
-        .eq('single_no', excelSingleNo)
-        .maybeSingle()
-
-      const result = existing
-        ? await supabase.from('sku_mappings').update(payload).eq('id', existing.id)
-        : await supabase.from('sku_mappings').insert(payload)
-
-      if (result.error) {
-        failCount += 1
-        continue
-      }
-
-      successCount += 1
+    if (uniqueRows.length === 0) {
+      alert('업로드 가능한 데이터가 없습니다.')
+      return
     }
 
+    setUploading(true)
+    setIsSaving(true)
+    setUploadProgress({
+      total: uniqueRows.length,
+      processed: 0,
+      success: 0,
+      fail: 0,
+      percent: 0,
+    })
+
+    const result = await batchUpsert({
+      supabase,
+      tableName: 'sku_mappings',
+      rows: uniqueRows,
+      onConflict: 'item_no,single_no',
+      chunkSize: 500,
+      onProgress: setUploadProgress,
+    })
+
+    setUploading(false)
     setIsSaving(false)
 
-    alert(`엑셀 업로드 완료\n\n성공 ${successCount}건\n실패 ${failCount}건`)
+    alert(
+      `엑셀 업로드 완료\n\n성공 ${result.success.toLocaleString()}건\n실패 ${result.fail.toLocaleString()}건${
+        result.errors?.length
+          ? `\n\n오류 예시:\n${result.errors.slice(0, 3).join('\n')}`
+          : ''
+      }`
+    )
+
     await searchMappings()
   }
 
@@ -345,7 +394,7 @@ export function SkuMappingManager() {
           <Input
             type="file"
             accept=".xlsx,.xls,.csv"
-            disabled={isSaving}
+            disabled={isSaving || uploading}
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (!file) return
@@ -354,6 +403,26 @@ export function SkuMappingManager() {
               e.target.value = ''
             }}
           />
+          {uploading && uploadProgress && (
+            <div className="mt-4 rounded-xl border bg-blue-50 p-4 text-sm text-blue-700">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">업로드 중...</p>
+                <p>{uploadProgress.percent}%</p>
+              </div>
+
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                />
+              </div>
+
+              <p className="mt-2 text-xs">
+                {uploadProgress.processed.toLocaleString()} /{' '}
+                {uploadProgress.total.toLocaleString()}건 처리 중
+              </p>
+            </div>
+          )}
         </div>
       </section>
 

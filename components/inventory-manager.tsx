@@ -199,8 +199,20 @@ export function InventoryManager() {
     return warehouses.find((item) => item.id === id)?.name || '-'
   }
 
+  function normalizeSku(sku: string) {
+  return sku
+    .trim()
+    .toUpperCase()
+    .replace(/_FREE$/, '_F')
+}
+
   function getSkuMapping(sku: string) {
-    return skuMappings.find((item) => item.sku === sku)
+    const normalizedSku = normalizeSku(sku)
+
+    return skuMappings.find(
+      (item) =>
+        normalizeSku(item.sku) === normalizedSku
+    )
   }
 
   function getProductImage(modelName?: string | null) {

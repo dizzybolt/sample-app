@@ -87,6 +87,22 @@ const getAutoInboundStatus = (
   return '입고완료'
 }
 
+function normalizeSkuSize(size: string) {
+  const value = String(size || '').trim().toUpperCase()
+
+  if (value === 'FREE') return 'F'
+
+  return value
+}
+
+function buildInventorySku(
+  koreaCode: string,
+  colorCode: string,
+  sizeLabel: string
+) {
+  return `${koreaCode}_${colorCode}_${normalizeSkuSize(sizeLabel)}`
+}
+
 export function InboundSheetClient({
   date,
   chinaCode,
@@ -919,7 +935,11 @@ export function InboundSheetClient({
         continue
       }
 
-      const sku = `${item.korea_code}_${item.color_code}_${item.size_label}`
+      const sku = buildInventorySku(
+        item.korea_code,
+        item.color_code,
+        item.size_label
+      )
       const reflectQty = Number(item.qty || 0)
 
       const { data: existing } = await supabase
