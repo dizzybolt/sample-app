@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: '샘플 입고 관리',
-  description: '의류 샘플 입고 관리 시스템',
+  title: 'BHPC OMA',
+  description: '샘플, 발주, 입고, 상품, 재고, 업무 도구 관리 시스템',
 }
 
 export default function RootLayout({

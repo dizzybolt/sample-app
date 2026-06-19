@@ -151,8 +151,8 @@ export function AppShell({ children }: AppShellProps) {
   const sidebar = (
     <aside className="flex h-full w-64 flex-col border-r bg-white p-4">
       <div className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Sample ERP</h1>
-        <p className="text-xs text-gray-500">Sample Workflow System</p>
+        <h1 className="text-lg font-bold text-gray-900">BHPC OMA</h1>
+        <p className="text-xs text-gray-500">BHPC Operations Management App</p>
       </div>
 
       <nav className="space-y-3 overflow-y-auto">
@@ -204,7 +204,7 @@ export function AppShell({ children }: AppShellProps) {
             <Menu className="h-5 w-5" />
           </Button>
 
-          <h1 className="font-bold text-gray-900">Sample ERP</h1>
+          <h1 className="font-bold text-gray-900">BHPC OMA</h1>
         </header>
 
         {isOpen && (

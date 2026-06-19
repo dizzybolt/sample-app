@@ -73,9 +73,9 @@ export default function HomePage() {
   return (
     <div className="space-y-8">
       <section>
-        <h1 className="text-3xl font-bold text-gray-900">Sample ERP</h1>
+        <h1 className="text-3xl font-bold text-gray-900">BHPC OMA</h1>
         <p className="mt-2 text-sm text-gray-500">
-          샘플, 발주, 입고, 상품, 재고, Utility 업무를 한 곳에서 관리합니다.
+          샘플, 발주, 입고, 상품, 재고, 업무 도구를 한 곳에서 관리합니다.
         </p>
       </section>
 
