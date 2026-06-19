@@ -62,7 +62,7 @@ const menuSections = [
       { title: '출력 헤더 관리', href: '/print-headers', icon: FileCog },
       { title: '상품 마스터', href: '/products', icon: Package },
       { title: '모델코드관리', href: '/model-codes', icon: Wrench },
-      { title: '이미지관리', href: '/product-images', icon: FileText },
+      { title: '이미지관리', href: '/product-images', icon: Camera },
     ],
   },
   {

@@ -192,6 +192,12 @@ async function handleUploadExcel(file: File) {
     })
     .filter(Boolean)
 
+      const uniqueRows = Array.from(
+        new Map(
+          uploadRows.map((row) => [row!.model_name, row])
+        ).values()
+      )
+
   if (uploadRows.length === 0) {
     alert('업로드 가능한 데이터가 없습니다.')
     return
@@ -200,7 +206,7 @@ async function handleUploadExcel(file: File) {
   setUploading(true)
   setIsSaving(true)
   setUploadProgress({
-    total: uploadRows.length,
+    total: uniqueRows.length,
     processed: 0,
     success: 0,
     fail: 0,
@@ -210,7 +216,7 @@ async function handleUploadExcel(file: File) {
   const result = await batchUpsert({
     supabase,
     tableName: 'product_images',
-    rows: uploadRows,
+    rows: uniqueRows,
     onConflict: 'model_name',
     chunkSize: 500,
     onProgress: setUploadProgress,
