@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3,
+  Barcode,
   BookOpen,
   Camera,
   ChevronDown,
@@ -12,13 +13,24 @@ import {
   FileText,
   Home,
   IdCard,
+  ImageIcon,
+  Layers3,
   Menu,
   Package,
   PackageCheck,
   Palette,
   Ruler,
+  Settings,
+  Shirt,
+  Truck,
+  Warehouse,
   Wrench,
   X,
+  Combine,
+  Boxes,
+  Grid2x2Plus,
+  Images,
+  LayoutList,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -26,14 +38,15 @@ import { Button } from '@/components/ui/button'
 
 const menuSections = [
   {
-    key: 'work',
+    key: 'operation',
     title: '운영관리',
     items: [
-      { title: '홈', href: '/', icon: Home },
+      { title: '전체 메뉴', href: '/', icon: Home },
       { title: '대시보드', href: '/dashboard', icon: BarChart3 },
       { title: '샘플관리', href: '/samples', icon: ClipboardList },
       { title: '발주관리', href: '/orders', icon: FileText },
       { title: '입고관리', href: '/inbound', icon: PackageCheck },
+      { title: '상품 마스터', href: '/products', icon: LayoutList },
     ],
   },
   {
@@ -41,36 +54,35 @@ const menuSections = [
     title: '상품관리',
     items: [
       { title: '아이템카드', href: '/item-cards', icon: IdCard },
-      { title: 'SKU 매핑관리', href: '/sku-mappings', icon: Wrench },
+      { title: 'SKU 매핑관리', href: '/sku-mappings', icon: Barcode },
+      { title: '이미지관리', href: '/product-images', icon: Images },
     ],
   },
   {
     key: 'inventory',
     title: '재고관리',
     items: [
-      { title: '재고관리', href: '/inventory', icon: Package },
-      { title: '창고관리', href: '/warehouses', icon: Wrench },
-    ],
-  },
-  {
-    key: 'setting',
-    title: '설정관리',
-    items: [
-      { title: '컬러표', href: '/color-codes', icon: Palette },
-      { title: '사이즈표', href: '/size-groups', icon: Ruler },
-      { title: '스튜디오', href: '/studios', icon: Camera },
-      { title: '출력 헤더 관리', href: '/print-headers', icon: FileCog },
-      { title: '상품 마스터', href: '/products', icon: Package },
-      { title: '모델코드관리', href: '/model-codes', icon: Wrench },
-      { title: '이미지관리', href: '/product-images', icon: Camera },
+      { title: '재고관리', href: '/inventory', icon: Boxes },
+      { title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck },
+      { title: '창고관리', href: '/warehouses', icon: Warehouse },
     ],
   },
   {
     key: 'utility',
-    title: 'Utility',
+    title: '도구',
     items: [
-      //* { title: '유틸리티', href: '/utility', icon: Wrench }, *//
-      { title: '구성상품 생성기', href: '/utility/bundle-builder', icon: FileCog, },
+      { title: '구성상품 생성기', href: '/utility/bundle-builder', icon: Combine },
+    ],
+  },
+  {
+    key: 'admin',
+    title: '설정',
+    items: [
+      { title: '모델명 생성 기준 설정', href: '/model-codes', icon: Settings },
+      { title: '컬러 기준 설정', href: '/color-codes', icon: Palette },
+      { title: '사이즈 기준 설정', href: '/size-groups', icon: Ruler },
+      { title: '스튜디오 관리', href: '/studios', icon: Camera },
+      { title: '발주/입고 출력 헤더 설정', href: '/print-headers', icon: Grid2x2Plus },
     ],
   },
   {
@@ -109,9 +121,7 @@ export function AppShell({ children }: AppShellProps) {
 
   function toggleSection(key: string) {
     setOpenSections((prev) =>
-      prev.includes(key)
-        ? prev.filter((item) => item !== key)
-        : [...prev, key]
+      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
     )
   }
 
@@ -141,8 +151,8 @@ export function AppShell({ children }: AppShellProps) {
   const sidebar = (
     <aside className="flex h-full w-64 flex-col border-r bg-white p-4">
       <div className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">샘플 입고 관리</h1>
-        <p className="text-xs text-gray-500">Sample Workflow</p>
+        <h1 className="text-lg font-bold text-gray-900">Sample ERP</h1>
+        <p className="text-xs text-gray-500">Sample Workflow System</p>
       </div>
 
       <nav className="space-y-3 overflow-y-auto">
@@ -194,7 +204,7 @@ export function AppShell({ children }: AppShellProps) {
             <Menu className="h-5 w-5" />
           </Button>
 
-          <h1 className="font-bold text-gray-900">샘플 입고 관리</h1>
+          <h1 className="font-bold text-gray-900">Sample ERP</h1>
         </header>
 
         {isOpen && (

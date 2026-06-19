@@ -1,86 +1,110 @@
 import Link from 'next/link'
 import {
   BarChart3,
+  Barcode,
+  Camera,
   ClipboardList,
+  FileCog,
   FileText,
   IdCard,
+  ImageIcon,
+  Layers3,
+  Package,
   PackageCheck,
+  Palette,
+  Ruler,
+  Settings,
+  Shirt,
+  Warehouse,
+  Wrench,
+  X,
+  Combine,
+  Boxes,
+  Grid2x2Plus,
+  Images,
+  LayoutList,
 } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
 
-const menuItems = [
+const sections = [
   {
-    title: '대시보드',
-    desc: '전체 업무 현황과 장기 대기 항목 확인',
-    href: '/dashboard',
-    icon: BarChart3,
+    title: '운영관리',
+    items: [
+      { title: '대시보드', href: '/dashboard', icon: BarChart3, desc: '전체 업무 현황 확인' },
+      { title: '샘플관리', href: '/samples', icon: ClipboardList, desc: '신규 샘플 등록 및 상태 관리' },
+      { title: '발주관리', href: '/orders', icon: FileText, desc: '발주서 작성 및 발주수량 관리' },
+      { title: '입고관리', href: '/inbound', icon: PackageCheck, desc: '입고 회차별 수량 관리' },
+      { title: '모델명관리', href: '/products', icon: LayoutList, desc: '모델명 등록 및 관리' },
+    ],
   },
   {
-    title: '샘플관리',
-    desc: '신규 샘플 등록 및 상품화 상태 관리',
-    href: '/samples',
-    icon: ClipboardList,
+    title: '상품관리',
+    items: [
+      { title: '아이템카드', href: '/item-cards', icon: IdCard, desc: '촬영/작업 상태와 상품정보 관리' },
+      { title: 'SKU 매핑관리', href: '/sku-mappings', icon: Barcode, desc: '품번번호/단품번호와 SKU 매핑' },
+      { title: '이미지관리', href: '/product-images', icon: Images, desc: '모델명 기준 이미지 URL 관리' },
+    ],
   },
   {
-    title: '아이템카드',
-    desc: '촬영, 작업 상태와 상품정보 관리',
-    href: '/item-cards',
-    icon: IdCard,
+    title: '물류관리',
+    items: [
+      { title: '재고관리', href: '/inventory', icon: Boxes, desc: '창고별 SKU 재고 관리' },
+      { title: '창고관리', href: '/warehouses', icon: Warehouse, desc: '재고 반영 창고 관리' },
+    ],
   },
   {
-    title: '발주관리',
-    desc: '발주서 작성 및 발주수량 관리',
-    href: '/orders',
-    icon: FileText,
+    title: '도구',
+    items: [
+      { title: '구성상품 생성기', href: '/utility/bundle-builder', icon: Combine, desc: '1+1 및 세트 구성 리스트 생성' },
+    ],
   },
   {
-    title: '입고관리',
-    desc: '입고 회차별 수량과 누적 입고 관리',
-    href: '/inbound',
-    icon: PackageCheck,
+    title: '설정',
+    items: [
+      { title: '모델명 기준 관리', href: '/model-codes', icon: Settings, desc: '브랜드/카테고리/연도/시즌 코드 관리' },
+      { title: '컬러 기준 관리', href: '/color-codes', icon: Palette, desc: '색상 코드 관리' },
+      { title: '사이즈 기준 관리', href: '/size-groups', icon: Ruler, desc: '사이즈 그룹 관리' },
+      { title: '발주/입고 출력 헤더 설정', href: '/print-headers', icon: Grid2x2Plus, desc: '발주서/입고서 헤더 관리' },
+      { title: '스튜디오 관리', href: '/studios', icon: Camera, desc: '촬영 스튜디오 관리' },
+    ],
   },
 ]
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <section>
-          <h1 className="text-2xl font-bold text-gray-900">
-            샘플 입고 관리
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            필요한 업무 메뉴를 선택하세요.
-          </p>
+    <div className="space-y-8">
+      <section>
+        <h1 className="text-3xl font-bold text-gray-900">Sample ERP</h1>
+        <p className="mt-2 text-sm text-gray-500">
+          샘플, 발주, 입고, 상품, 재고, Utility 업무를 한 곳에서 관리합니다.
+        </p>
+      </section>
+
+      {sections.map((section) => (
+        <section key={section.title} className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900">{section.title}</h2>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {section.items.map((item) => {
+              const Icon = item.icon
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="rounded-2xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
+                    <Icon className="h-5 w-5" />
+                  </div>
+
+                  <h3 className="mt-4 font-semibold text-gray-900">{item.title}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{item.desc}</p>
+                </Link>
+              )
+            })}
+          </div>
         </section>
-
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {menuItems.map((item) => {
-            const Icon = item.icon
-
-            return (
-              <Link key={item.href} href={item.href}>
-                <Card className="h-full transition hover:-translate-y-1 hover:shadow-md">
-                  <CardContent className="space-y-3 p-5">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100">
-                      <Icon className="h-5 w-5 text-gray-700" />
-                    </div>
-
-                    <div>
-                      <h2 className="font-bold text-gray-900">
-                        {item.title}
-                      </h2>
-                      <p className="mt-1 text-sm text-gray-500">
-                        {item.desc}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            )
-          })}
-        </section>
-      </div>
-    </main>
+      ))}
+    </div>
   )
 }
