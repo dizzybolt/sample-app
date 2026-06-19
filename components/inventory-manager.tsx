@@ -3,7 +3,7 @@
 import * as XLSX from 'xlsx'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Inventory, InventoryLog, Warehouse } from '@/lib/types'
+import type { Inventory, InventoryLog, Warehouse, SkuMapping, ProductImage } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -45,6 +45,9 @@ export function InventoryManager() {
 
   const [selectedLogSku, setSelectedLogSku] = useState('')
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([])
+
+  const [skuMappings, setSkuMappings] = useState<SkuMapping[]>([])
+  const [productImages, setProductImages] = useState<ProductImage[]>([])
 
   useEffect(() => {
     fetchWarehouses()
@@ -148,14 +151,69 @@ export function InventoryManager() {
       return
     }
 
-      setInventories((data || []) as Inventory[])
-      setTotalCount(count || 0)
+    const nextInventories = (data || []) as Inventory[]
+
+    setInventories(nextInventories)
+    setTotalCount(count || 0)
+
+    await fetchInventoryRelations(nextInventories)
+  }
+
+  async function fetchInventoryRelations(items: Inventory[]) {
+    const skus = items.map((item) => item.sku).filter(Boolean)
+
+    if (skus.length === 0) {
+      setSkuMappings([])
+      setProductImages([])
+      return
+    }
+
+    const { data: mappingData } = await supabase
+      .from('sku_mappings')
+      .select('*')
+      .in('sku', skus)
+
+    const mappings = (mappingData || []) as SkuMapping[]
+    setSkuMappings(mappings)
+
+    const modelNames = Array.from(
+      new Set(mappings.map((item) => item.model_name).filter(Boolean))
+    )
+
+    if (modelNames.length === 0) {
+      setProductImages([])
+      return
+    }
+
+    const { data: imageData } = await supabase
+      .from('product_images')
+      .select('*')
+      .in('model_name', modelNames)
+
+    setProductImages((imageData || []) as ProductImage[])
   }
 
   const filteredInventories = inventories
 
   function getWarehouseName(id: string) {
     return warehouses.find((item) => item.id === id)?.name || '-'
+  }
+
+  function getSkuMapping(sku: string) {
+    return skuMappings.find((item) => item.sku === sku)
+  }
+
+  function getProductImage(modelName?: string | null) {
+    if (!modelName) return null
+    return productImages.find((item) => item.model_name === modelName)
+  }
+
+  function shouldShowModelImage(item: Inventory, index: number) {
+    const mapping = getSkuMapping(item.sku)
+    const prevItem = filteredInventories[index - 1]
+    const prevMapping = prevItem ? getSkuMapping(prevItem.sku) : null
+
+    return mapping?.model_name !== prevMapping?.model_name
   }
 
   function handleEditInventory(item: Inventory) {
@@ -686,65 +744,127 @@ export function InventoryManager() {
             <thead>
               <tr className="border-b bg-gray-50 text-left">
                 <th className="p-3 text-center">NO</th>
+                <th className="p-3 text-center">이미지</th>
                 <th className="p-3 text-center">창고</th>
+                <th className="p-3 text-center">품번번호</th>
+                <th className="p-3 text-center">단품번호</th>
+                <th className="p-3 text-center">모델명</th>
+                <th className="p-3 text-center">색상</th>
+                <th className="p-3 text-center">사이즈</th>
                 <th className="p-3 text-center">SKU</th>
                 <th className="p-3 text-center">현재고</th>
                 <th className="p-3 text-center">최근수정일</th>
                 <th className="p-3 text-left">비고</th>
+                <th className="p-3 text-right">관리</th>
               </tr>
             </thead>
 
             <tbody>
               {filteredInventories.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-gray-500">
+                  <td colSpan={13} className="p-6 text-center text-gray-500">
                     등록된 재고가 없습니다.
                   </td>
                 </tr>
               ) : (
-                filteredInventories.map((item, index) => (
-                  <tr key={item.id} className="border-b">
-                    <td className="p-3 text-center">{index + 1}</td>
-                    <td className="p-3 text-center">{getWarehouseName(item.warehouse_id)}</td>
-                    <td className="p-3 text-center font-medium">{item.sku}</td>
-                    <td className="p-3 text-center font-bold">
-                      {formatNumber(item.qty)}
-                    </td>
-                    <td className="p-3 text-center">{item.work_date || item.updated_at?.slice(0, 10) || '-'}</td>
-                    <td className="p-3 text-left">{item.note || '-'}</td>
+                filteredInventories.map((item, index) => {
+                  const mapping = getSkuMapping(item.sku)
+                  const image = getProductImage(mapping?.model_name)
+                  const showImage = shouldShowModelImage(item, index)
 
-                    <td className="p-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => fetchInventoryLogs(item.sku)}
-                        >
-                          로그
-                        </Button>
+                  return (
+                    <tr key={item.id} className="border-b">
+                      <td className="p-3 text-center">{index + 1}</td>
 
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEditInventory(item)}
-                        >
-                          수정
-                        </Button>
+                      <td className="p-3 text-center">
+                        {showImage ? (
+                          image?.image_url ? (
+                            <img
+                              src={image.image_url}
+                              alt={mapping?.model_name || item.sku}
+                              className="mx-auto h-14 w-14 rounded border object-cover"
+                            />
+                          ) : (
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded border bg-gray-50 text-[10px] text-gray-400">
+                              NO IMAGE
+                            </div>
+                          )
+                        ) : null}
+                      </td>
 
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteInventory(item)}
-                        >
-                          삭제
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      <td className="p-3 text-center">
+                        {getWarehouseName(item.warehouse_id)}
+                      </td>
+
+                      <td className="p-3 text-center">
+                        {mapping?.item_no || '-'}
+                      </td>
+
+                      <td className="p-3 text-center">
+                        {mapping?.single_no || '-'}
+                      </td>
+
+                      <td className="p-3 text-center">
+                        {mapping?.model_name || '-'}
+                      </td>
+
+                      <td className="p-3 text-center">
+                        {mapping ? `${mapping.color_code} ${mapping.color_name || ''}` : '-'}
+                      </td>
+
+                      <td className="p-3 text-center">
+                        {mapping?.size_code || '-'}
+                      </td>
+
+                      <td className="p-3 text-center font-medium">
+                        {item.sku}
+                      </td>
+
+                      <td className="p-3 text-center font-bold">
+                        {formatNumber(item.qty)}
+                      </td>
+
+                      <td className="p-3 text-center">
+                        {item.work_date || item.updated_at?.slice(0, 10) || '-'}
+                      </td>
+
+                      <td className="p-3 text-left">
+                        {item.note || '-'}
+                      </td>
+
+                      <td className="p-3">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => fetchInventoryLogs(item.sku)}
+                          >
+                            로그
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditInventory(item)}
+                          >
+                            수정
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteInventory(item)}
+                          >
+                            삭제
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
