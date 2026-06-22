@@ -531,12 +531,15 @@ async function loadModelRows(groupId: string) {
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={addGroup}>
-            옵션 추가
+            구성 상품 추가
           </Button>
-
+          
+          {/* 하단 엑셀 다운로드 버튼과 중복되므로 비활성화
           <Button type="button" variant="outline" onClick={downloadExcel}>
             결과 엑셀 다운로드
           </Button>
+          */}
+
         </div>
 
         <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
