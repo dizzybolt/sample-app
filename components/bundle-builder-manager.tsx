@@ -2,6 +2,7 @@
 
 import * as XLSX from 'xlsx'
 import { useMemo, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -20,6 +21,7 @@ type OptionRow = {
 type OptionGroup = {
   id: string
   title: string
+  modelSearch: string
   rows: OptionRow[]
 }
 
@@ -41,6 +43,7 @@ function createGroup(index: number): OptionGroup {
   return {
     id: crypto.randomUUID(),
     title: `${index}번옵션`,
+    modelSearch: '',
     rows: [createRow()],
   }
 }
@@ -65,6 +68,20 @@ function formatItemInfo(row: OptionRow) {
 
 function getQty(row: OptionRow) {
   return Number(String(row.stockQty || '0').replaceAll(',', '')) || 0
+}
+
+function applyStockRate(qty: number, rate: string) {
+  const value = Number(String(rate || '').replace('%', '').trim())
+
+  if (!rate.trim() || Number.isNaN(value) || value >= 100) {
+    return qty
+  }
+
+  if (value <= 0) {
+    return 0
+  }
+
+  return Math.floor(qty * (value / 100))
 }
 
 function isValidRow(row: OptionRow) {
@@ -93,6 +110,9 @@ function generateCombinations<T>(groups: T[][]): T[][] {
 
 export function BundleBuilderManager() {
   const [groups, setGroups] = useState<OptionGroup[]>([createGroup(1)])
+  const [stockRate, setStockRate] = useState('')
+  const supabase = createClient()
+  const [loadingGroupId, setLoadingGroupId] = useState<string | null>(null)
 
   function addGroup() {
     setGroups((prev) => [...prev, createGroup(prev.length + 1)])
@@ -150,6 +170,97 @@ export function BundleBuilderManager() {
     )
   }
 
+function updateGroupModelSearch(groupId: string, value: string) {
+  setGroups((prev) =>
+    prev.map((group) =>
+      group.id === groupId
+        ? {
+            ...group,
+            modelSearch: value,
+          }
+        : group
+    )
+  )
+}
+
+async function loadModelRows(groupId: string) {
+  const targetGroup = groups.find((group) => group.id === groupId)
+  const modelName = targetGroup?.modelSearch.trim()
+
+  if (!modelName) {
+    alert('모델명을 입력해 주세요.')
+    return
+  }
+
+  setLoadingGroupId(groupId)
+
+  const { data: mappings, error: mappingError } = await supabase
+    .from('sku_mappings')
+    .select('*')
+    .eq('model_name', modelName)
+    .order('color_code', { ascending: true })
+    .order('size_code', { ascending: true })
+
+  if (mappingError) {
+    setLoadingGroupId(null)
+    alert(`SKU 매핑 조회 실패\n\n${mappingError.message}`)
+    return
+  }
+
+  if (!mappings || mappings.length === 0) {
+    setLoadingGroupId(null)
+    alert('조회된 SKU 매핑이 없습니다.')
+    return
+  }
+
+  const skus = mappings.map((item) => item.sku).filter(Boolean)
+
+  const { data: inventories, error: inventoryError } = await supabase
+    .from('inventory')
+    .select('sku, qty')
+    .in('sku', skus)
+
+  if (inventoryError) {
+    setLoadingGroupId(null)
+    alert(`재고 조회 실패\n\n${inventoryError.message}`)
+    return
+  }
+
+  const stockMap = new Map<string, number>()
+
+  ;(inventories || []).forEach((item) => {
+    stockMap.set(
+      item.sku,
+      (stockMap.get(item.sku) || 0) + Number(item.qty || 0)
+    )
+  })
+
+  const nextRows: OptionRow[] = mappings.map((item) => ({
+    id: crypto.randomUUID(),
+    itemNo: item.item_no || '',
+    singleNo: item.single_no || '',
+    optionName: item.model_name || '',
+    modelName: item.model_name || '',
+    colorCode: item.color_code || '',
+    colorName: item.color_name || '',
+    size: item.size_code || '',
+    stockQty: String(stockMap.get(item.sku) || 0),
+  }))
+
+  setGroups((prev) =>
+    prev.map((group) =>
+      group.id === groupId
+        ? {
+            ...group,
+            rows: nextRows,
+          }
+        : group
+    )
+  )
+
+  setLoadingGroupId(null)
+}
+
   async function uploadOptionExcel(groupId: string, file: File) {
     const buffer = await file.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
@@ -199,55 +310,201 @@ export function BundleBuilderManager() {
   const resultRows = useMemo(() => {
     if (activeGroups.length === 0) return []
 
+// ==========================================
+    // [CASE 1] 그룹이 1개일 때: 1+1 조합 모드 (안전한 균등 분배 + 정렬 + 행 유지)
+    // ==========================================
     if (activeGroups.length === 1) {
       const sourceRows = activeGroups[0].rows
       const results: any[] = []
 
+      // 1. 모든 조합 리스트를 먼저 생성
+      const allCombinations: { first: OptionRow; second: OptionRow; firstKey: string; secondKey: string }[] = []
       for (let i = 0; i < sourceRows.length; i++) {
         for (let j = i; j < sourceRows.length; j++) {
           const first = sourceRows[i]
           const second = sourceRows[j]
-
           if (first.size.trim() !== second.size.trim()) continue
 
-          const size = formatSize(first.size)
-          const stockQty = Math.min(getQty(first), getQty(second))
-
-          results.push({
-            모델명: first.modelName.trim(),
-            옵션별칭: `SET_${first.modelName.trim()}_${first.colorCode.trim()}+${second.colorCode.trim()}_${size}`,
-            색상명: `${first.colorName.trim()}+${second.colorName.trim()}`,
-            사이즈: size,
-            재고수량: stockQty,
-            '품번넘버+단품넘버': `${formatItemInfo(first)},${formatItemInfo(
-              second
-            )}`,
+          allCombinations.push({
+            first,
+            second,
+            firstKey: `${first.itemNo.trim()}_${first.singleNo.trim()}`,
+            secondKey: `${second.itemNo.trim()}_${second.singleNo.trim()}`,
           })
         }
+      }
+
+      // 2. 색상코드 숫자 기준 정렬 (02 -> 03 -> 06 -> 11 -> 15 순서 보장)
+      allCombinations.sort((a, b) => {
+        const codeA1 = Number(a.first.colorCode);
+        const codeB1 = Number(b.first.colorCode);
+        if (codeA1 !== codeB1) return codeA1 - codeB1;
+        const codeA2 = Number(a.second.colorCode);
+        const codeB2 = Number(b.second.colorCode);
+        return codeA2 - codeB2;
+      });
+
+      // 3. 가중치 정밀 조정 루프 (최종 재고가 0이 되는 조합의 가중치를 분모에서 제외)
+      let activeCombinationKeys = new Set(allCombinations.map((_, index) => index));
+
+      while (true) {
+        const itemUsageMap = new Map<string, number>()
+
+        allCombinations.forEach((comb, index) => {
+          if (!activeCombinationKeys.has(index)) return
+          if (getQty(comb.first) <= 0 || getQty(comb.second) <= 0) return
+
+          if (comb.firstKey === comb.secondKey) {
+            itemUsageMap.set(comb.firstKey, (itemUsageMap.get(comb.firstKey) || 0) + 2)
+          } else {
+            itemUsageMap.set(comb.firstKey, (itemUsageMap.get(comb.firstKey) || 0) + 1)
+            itemUsageMap.set(comb.secondKey, (itemUsageMap.get(comb.secondKey) || 0) + 1)
+          }
+        })
+
+        let hasNewZeroCombination = false
+        const nextActiveKeys = new Set<number>()
+
+        allCombinations.forEach((comb, index) => {
+          if (!activeCombinationKeys.has(index)) return
+          if (getQty(comb.first) <= 0 || getQty(comb.second) <= 0) {
+            hasNewZeroCombination = true
+            return
+          }
+
+          const firstTotalUsage = itemUsageMap.get(comb.firstKey) || 1
+          const secondTotalUsage = itemUsageMap.get(comb.secondKey) || 1
+
+          let stockQty = 0
+          if (comb.firstKey === comb.secondKey) {
+            stockQty = Math.floor((getQty(comb.first) / firstTotalUsage) * 2)
+          } else {
+            const qtyFromFirst = Math.floor(getQty(comb.first) / firstTotalUsage)
+            const qtyFromSecond = Math.floor(getQty(comb.second) / secondTotalUsage)
+            stockQty = Math.min(qtyFromFirst, qtyFromSecond)
+          }
+
+          if (stockQty <= 0) {
+            hasNewZeroCombination = true
+          } else {
+            nextActiveKeys.add(index)
+          }
+        })
+
+        if (!hasNewZeroCombination) break
+        activeCombinationKeys = nextActiveKeys
+        if (activeCombinationKeys.size === 0) break
+      }
+
+      // 4. 최종 확정된 가중치 맵 구축
+      const finalUsageMap = new Map<string, number>()
+      allCombinations.forEach((comb, index) => {
+        if (!activeCombinationKeys.has(index)) return
+        if (getQty(comb.first) <= 0 || getQty(comb.second) <= 0) return
+
+        if (comb.firstKey === comb.secondKey) {
+          finalUsageMap.set(comb.firstKey, (finalUsageMap.get(comb.firstKey) || 0) + 2)
+        } else {
+          finalUsageMap.set(comb.firstKey, (finalUsageMap.get(comb.firstKey) || 0) + 1)
+          finalUsageMap.set(comb.secondKey, (finalUsageMap.get(comb.secondKey) || 0) + 1)
+        }
+      })
+
+      // 5. 최종 결과 배열 생성 (행 유지 + 출력비율 반영)
+      for (const { first, second, firstKey, secondKey } of allCombinations) {
+        const size = formatSize(first.size)
+        let stockQty = 0
+        
+        if (getQty(first) > 0 && getQty(second) > 0) {
+          const firstTotalUsage = finalUsageMap.get(firstKey) || 1
+          const secondTotalUsage = finalUsageMap.get(secondKey) || 1
+
+          if (firstKey === secondKey) {
+            stockQty = Math.floor((getQty(first) / firstTotalUsage) * 2)
+          } else {
+            const qtyFromFirst = Math.floor(getQty(first) / firstTotalUsage)
+            const qtyFromSecond = Math.floor(getQty(second) / secondTotalUsage)
+            stockQty = Math.min(qtyFromFirst, qtyFromSecond)
+          }
+          if (stockQty < 0) stockQty = 0
+        }
+
+        results.push({
+          모델명: first.modelName.trim(),
+          옵션별칭: `SET_${first.modelName.trim()}_${String(first.colorCode).trim().padStart(2, '0')}+${String(second.colorCode).trim().padStart(2, '0')}_${size === 'FREE' ? 'F' : size}`,
+          색상명: `C${String(first.colorCode).padStart(2, '0')}${first.colorName.trim()}+C${String(second.colorCode).padStart(2, '0')}${second.colorName.trim()}`,
+          사이즈: String(size).replace(/^0/, ''),
+          재고수량: applyStockRate(stockQty, stockRate),
+          '품번넘버+단품넘버': `${formatItemInfo(first)},${formatItemInfo(second)}`,
+        })
       }
 
       return results
     }
 
+    // ==========================================
+    // [CASE 2] 그룹이 2개 이상일 때: 세트 조합 모드 (비례배분)
+    // ==========================================
     const combinations = generateCombinations(
-    activeGroups.map((group) => group.rows)
+      activeGroups.map((group) => group.rows)
     )
 
-    return combinations.map((matchedRows) => ({
-    조합옵션명: matchedRows
-        .map(
-        (row) =>
-            `${row.optionName.trim()} ${row.colorName.trim()} ${formatSize(
-            row.size
-            )}`
-        )
-        .join('+'),
+    const allSetCombinations = combinations.map((matchedRows) => {
+      return {
+        matchedRows,
+        keys: matchedRows.map((row) => `${row.itemNo.trim()}_${row.singleNo.trim()}`)
+      }
+    })
 
-    재고수량: Math.min(...matchedRows.map(getQty)),
+    const setPartnerSumMap = new Map<string, number>()
+    allSetCombinations.forEach((comb) => {
+      if (comb.matchedRows.some((row) => getQty(row) <= 0)) return
 
-    '품번넘버+단품넘버': matchedRows.map(formatItemInfo).join(','),
-    }))
-  }, [activeGroups])
+      comb.matchedRows.forEach((row, rowIdx) => {
+        const currentKey = comb.keys[rowIdx]
+        const partnerStockProduct = comb.matchedRows
+          .filter((_, idx) => idx !== rowIdx)
+          .reduce((sum, r) => sum + getQty(r), 0)
+
+        setPartnerSumMap.set(currentKey, (setPartnerSumMap.get(currentKey) || 0) + partnerStockProduct)
+      })
+    })
+
+    return allSetCombinations.map((comb) => {
+      let stockQty = 0
+
+      if (comb.matchedRows.every((row) => getQty(row) > 0)) {
+        const qtys = comb.matchedRows.map((row, rowIdx) => {
+          const currentKey = comb.keys[rowIdx]
+          const totalPartnerStock = setPartnerSumMap.get(currentKey) || 1
+          
+          const partnerStockProduct = comb.matchedRows
+            .filter((_, idx) => idx !== rowIdx)
+            .reduce((sum, r) => sum + getQty(r), 0)
+
+          return Math.floor(getQty(row) * (partnerStockProduct / totalPartnerStock))
+        })
+
+          stockQty = Math.min(...qtys)
+        if (stockQty < 0) stockQty = 0
+      }
+
+      return {
+        조합옵션명: comb.matchedRows
+          .map(
+            (row) =>
+              `${row.optionName.trim()} ${row.colorName.trim()} ${formatSize(
+                row.size
+              )}`
+          )
+          .join('+'),
+
+        재고수량: applyStockRate(stockQty, stockRate),
+
+        '품번넘버+단품넘버': comb.matchedRows.map(formatItemInfo).join(','),
+      }
+    })
+  }, [activeGroups, stockRate])
 
   function downloadExcel() {
     if (resultRows.length === 0) {
@@ -296,9 +553,31 @@ export function BundleBuilderManager() {
           className="rounded-2xl border bg-white p-5 shadow-sm"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="font-semibold text-gray-900">
-              {groupIndex + 1}번 옵션
-            </h2>
+            <div>
+              <h2 className="font-semibold text-gray-900">
+                {groupIndex + 1}번 옵션
+              </h2>
+
+              <div className="mt-2 flex gap-2">
+                <Input
+                  value={group.modelSearch}
+                  onChange={(e) =>
+                    updateGroupModelSearch(group.id, e.target.value)
+                  }
+                  placeholder="모델명 입력 후 불러오기"
+                  className="w-64"
+                />
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={loadingGroupId === group.id}
+                  onClick={() => loadModelRows(group.id)}
+                >
+                  {loadingGroupId === group.id ? '불러오는 중...' : '불러오기'}
+                </Button>
+              </div>
+            </div>
 
             <div className="flex flex-wrap gap-2">
               <Input
@@ -338,7 +617,7 @@ export function BundleBuilderManager() {
                 <tr className="border-b bg-gray-50 text-left">
                   <th className="p-2">품번넘버</th>
                   <th className="p-2">단품넘버</th>
-                  <th className="p-2">옵션명</th>
+                  <th className="p-2">옵션명(상품명)</th>
                   <th className="p-2">모델명</th>
                   <th className="p-2">색상코드</th>
                   <th className="p-2">색상명</th>
@@ -401,9 +680,19 @@ export function BundleBuilderManager() {
             </p>
           </div>
 
-          <Button type="button" variant="outline" onClick={downloadExcel}>
-            엑셀 다운로드
-          </Button>
+          <div className="flex items-center gap-2">
+            <Input
+              value={stockRate}
+              onChange={(e) => setStockRate(e.target.value)}
+              placeholder="출력비율 %"
+              className="w-28"
+              inputMode="numeric"
+            />
+
+            <Button type="button" variant="outline" onClick={downloadExcel}>
+              엑셀 다운로드
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">

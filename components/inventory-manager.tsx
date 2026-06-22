@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
 
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString('ko-KR')
@@ -32,7 +33,7 @@ export function InventoryManager() {
   const [searchTerm, setSearchTerm] = useState('')
 
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 100
+  const pageSize = 50
 
   const [totalCount, setTotalCount] = useState(0)
 
@@ -42,6 +43,9 @@ export function InventoryManager() {
   const [bulkUploadMode, setBulkUploadMode] = useState<'replace' | 'adjust'>(
   'replace'
   )
+
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<BulkProgress | null>(null)
 
   const [selectedLogSku, setSelectedLogSku] = useState('')
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([])
@@ -118,7 +122,7 @@ export function InventoryManager() {
         (currentPage - 1) * pageSize,
         currentPage * pageSize - 1
       )
-      .limit(100)
+      .limit(50)
 
     if (keyword) {
       const keywords = keyword
@@ -193,7 +197,38 @@ export function InventoryManager() {
     setProductImages((imageData || []) as ProductImage[])
   }
 
-  const filteredInventories = inventories
+  const filteredInventories = useMemo(() => {
+  return [...inventories].sort((a, b) => {
+    const dateA = a.work_date || a.updated_at || ''
+    const dateB = b.work_date || b.updated_at || ''
+
+    const dateCompare = dateB.localeCompare(dateA)
+
+    if (dateCompare !== 0) return dateCompare
+
+    const mappingA = getSkuMapping(a.sku)
+    const mappingB = getSkuMapping(b.sku)
+
+    const modelA = mappingA?.model_name || a.sku.split('_')[0] || ''
+    const modelB = mappingB?.model_name || b.sku.split('_')[0] || ''
+
+    const modelCompare = modelA.localeCompare(modelB, 'ko')
+
+    if (modelCompare !== 0) return modelCompare
+
+    const colorA = mappingA?.color_code || a.sku.split('_')[1] || ''
+    const colorB = mappingB?.color_code || b.sku.split('_')[1] || ''
+
+    const colorCompare = colorA.localeCompare(colorB, 'ko', { numeric: true })
+
+    if (colorCompare !== 0) return colorCompare
+
+    const sizeA = mappingA?.size_code || a.sku.split('_')[2] || ''
+    const sizeB = mappingB?.size_code || b.sku.split('_')[2] || ''
+
+    return sizeA.localeCompare(sizeB, 'ko', { numeric: true })
+  })
+}, [inventories, skuMappings])
 
   function getWarehouseName(id: string) {
     return warehouses.find((item) => item.id === id)?.name || '-'
@@ -333,6 +368,16 @@ export function InventoryManager() {
   }
 
   async function handleBulkUploadInventory(file: File) {
+    function normalizeInventorySku(value: string) {
+      const parts = String(value || '').trim().toUpperCase().split('_')
+
+      if (parts.length >= 3 && parts[parts.length - 1] === 'FREE') {
+        parts[parts.length - 1] = 'F'
+      }
+
+      return parts.join('_')
+    }
+
     const buffer = await file.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
     const worksheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -346,127 +391,213 @@ export function InventoryManager() {
       return
     }
 
+    setUploading(true)
     setIsSaving(true)
+    setUploadProgress({
+      total: rows.length,
+      processed: 0,
+      success: 0,
+      fail: 0,
+      percent: 0,
+    })
 
     const uploadWorkDate = new Date().toISOString().slice(0, 10)
 
-    let successCount = 0
-    let failCount = 0
+    const parsedRows = rows
+      .map((row) => {
+        const warehouseName = String(row.창고명 || row.warehouse_name || '').trim()
+        const warehouseCode = String(row.창고코드 || row.warehouse_code || '').trim()
+        const uploadSku = normalizeInventorySku(String(row.SKU || row.sku || '').trim())
+        const uploadQty = Number(String(row.수량 || row.qty || '0').replaceAll(',', ''))
+        const uploadNote = String(row.비고 || row.note || '').trim()
 
-    for (const row of rows) {
-      const warehouseName = String(row.창고명 || row.warehouse_name || '').trim()
-      const warehouseCode = String(row.창고코드 || row.warehouse_code || '').trim()
-      const uploadSku = String(row.SKU || row.sku || '').trim()
-      const uploadQty = Number(String(row.수량 || row.qty || '0').replaceAll(',', ''))
-      const uploadNote = String(row.비고 || row.note || '').trim()
+        const targetWarehouse = warehouses.find((warehouse) => {
+          if (warehouseName && warehouse.name === warehouseName) return true
+          if (warehouseCode && warehouse.code === warehouseCode) return true
+          return false
+        })
 
-      if (!uploadSku || Number.isNaN(uploadQty)) {
-        failCount += 1
-        continue
-      }
-
-      const targetWarehouse = warehouses.find((warehouse) => {
-        if (warehouseName && warehouse.name === warehouseName) return true
-        if (warehouseCode && warehouse.code === warehouseCode) return true
-        return false
-      })
-
-      if (!targetWarehouse) {
-        failCount += 1
-        continue
-      }
-
-      const { data: existing } = await supabase
-        .from('inventory')
-        .select('*')
-        .eq('warehouse_id', targetWarehouse.id)
-        .eq('sku', uploadSku)
-        .maybeSingle()
-
-      const beforeQty = Number(existing?.qty || 0)
-
-        if (existing) {
-          const afterQty =
-            bulkUploadMode === 'replace'
-              ? uploadQty
-              : beforeQty + uploadQty
-
-          const changeQty =
-            bulkUploadMode === 'replace'
-              ? uploadQty - beforeQty
-              : uploadQty
-
-          const { error } = await supabase
-            .from('inventory')
-            .update({
-              qty: afterQty,
-              note: uploadNote || null,
-              work_date: uploadWorkDate,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existing.id)
-
-          if (error) {
-            failCount += 1
-            continue
-          }
-
-          await supabase.from('inventory_logs').insert({
-            inventory_id: existing.id,
-            warehouse_id: targetWarehouse.id,
-            sku: uploadSku,
-            change_type:
-              bulkUploadMode === 'replace'
-                ? '엑셀수량변경'
-                : '엑셀수량조정',
-            change_qty: changeQty,
-            before_qty: beforeQty,
-            after_qty: afterQty,
-            reason:
-              uploadNote ||
-              (bulkUploadMode === 'replace'
-                ? '엑셀 수량 변경'
-                : '엑셀 수량 조정'),
-            source_type: 'excel',
-          })
-        } else {
-        const { data, error } = await supabase
-          .from('inventory')
-          .insert({
-            warehouse_id: targetWarehouse.id,
-            sku: uploadSku,
-            qty: uploadQty,
-            work_date: uploadWorkDate,
-            note: uploadNote || null,
-          })
-          .select('*')
-          .single()
-
-        if (error) {
-          failCount += 1
-          continue
+        if (!targetWarehouse || !uploadSku || Number.isNaN(uploadQty)) {
+          return null
         }
 
-        await supabase.from('inventory_logs').insert({
-          inventory_id: data.id,
+        return {
           warehouse_id: targetWarehouse.id,
           sku: uploadSku,
-          change_type: '엑셀일괄등록',
-          change_qty: uploadQty,
-          before_qty: 0,
-          after_qty: uploadQty,
-          work_date: uploadWorkDate,
-          reason: uploadNote || '엑셀 일괄 등록',
-          source_type: 'excel',
-        })
-      }
+          upload_qty: uploadQty,
+          note: uploadNote,
+        }
+      })
+      .filter(Boolean)
 
-      successCount += 1
+    if (parsedRows.length === 0) {
+      setUploading(false)
+      setIsSaving(false)
+      alert('업로드 가능한 재고 데이터가 없습니다.')
+      return
     }
 
+    const mergedMap = new Map<string, NonNullable<(typeof parsedRows)[number]>>()
+
+    for (const row of parsedRows) {
+      const key = `${row!.warehouse_id}__${row!.sku}`
+      const prev = mergedMap.get(key)
+
+      if (!prev) {
+        mergedMap.set(key, row!)
+        continue
+      }
+
+      if (bulkUploadMode === 'adjust') {
+        mergedMap.set(key, {
+          ...row!,
+          upload_qty: prev.upload_qty + row!.upload_qty,
+          note: row!.note || prev.note,
+        })
+      } else {
+        mergedMap.set(key, row!)
+      }
+    }
+
+    const targetRows = Array.from(mergedMap.values())
+    const targetWarehouseIds = Array.from(new Set(targetRows.map((row) => row.warehouse_id)))
+    const targetSkus = Array.from(new Set(targetRows.map((row) => row.sku)))
+
+    const { data: existingRows, error: existingError } = await supabase
+      .from('inventory')
+      .select('*')
+      .in('warehouse_id', targetWarehouseIds)
+      .in('sku', targetSkus)
+
+    if (existingError) {
+      setUploading(false)
+      setIsSaving(false)
+      alert(`기존 재고 조회 실패\n\n${existingError.message}`)
+      return
+    }
+
+    const existingMap = new Map<string, Inventory>()
+
+    ;((existingRows || []) as Inventory[]).forEach((item) => {
+      existingMap.set(`${item.warehouse_id}__${item.sku}`, item)
+    })
+
+    const inventoryRows = targetRows.map((row) => {
+      const key = `${row.warehouse_id}__${row.sku}`
+      const existing = existingMap.get(key)
+      const beforeQty = Number(existing?.qty || 0)
+
+      const afterQty =
+        bulkUploadMode === 'replace'
+          ? row.upload_qty
+          : beforeQty + row.upload_qty
+
+      return {
+        warehouse_id: row.warehouse_id,
+        sku: row.sku,
+        qty: afterQty,
+        work_date: uploadWorkDate,
+        note: row.note || null,
+        updated_at: new Date().toISOString(),
+      }
+    })
+
+    const inventoryResult = await batchUpsert({
+      supabase,
+      tableName: 'inventory',
+      rows: inventoryRows,
+      onConflict: 'warehouse_id,sku',
+      chunkSize: 500,
+      onProgress: (progress) => {
+        setUploadProgress({
+          ...progress,
+          total: targetRows.length,
+          percent: Math.round(progress.percent * 0.7),
+        })
+      },
+    })
+
+    const { data: savedRows, error: savedError } = await supabase
+      .from('inventory')
+      .select('*')
+      .in('warehouse_id', targetWarehouseIds)
+      .in('sku', targetSkus)
+
+    if (savedError) {
+      setUploading(false)
+      setIsSaving(false)
+      alert(`저장된 재고 재조회 실패\n\n${savedError.message}`)
+      return
+    }
+
+    const savedMap = new Map<string, Inventory>()
+
+    ;((savedRows || []) as Inventory[]).forEach((item) => {
+      savedMap.set(`${item.warehouse_id}__${item.sku}`, item)
+    })
+
+    const logRows = targetRows
+      .map((row) => {
+        const key = `${row.warehouse_id}__${row.sku}`
+        const existing = existingMap.get(key)
+        const saved = savedMap.get(key)
+
+        if (!saved) return null
+
+        const beforeQty = Number(existing?.qty || 0)
+        const afterQty = Number(saved.qty || 0)
+
+        const changeQty =
+          bulkUploadMode === 'replace'
+            ? afterQty - beforeQty
+            : row.upload_qty
+
+        return {
+          inventory_id: saved.id,
+          warehouse_id: row.warehouse_id,
+          sku: row.sku,
+          change_type:
+            existing
+              ? bulkUploadMode === 'replace'
+                ? '엑셀수량변경'
+                : '엑셀수량조정'
+              : '엑셀일괄등록',
+          change_qty: changeQty,
+          before_qty: beforeQty,
+          after_qty: afterQty,
+          work_date: uploadWorkDate,
+          reason:
+            row.note ||
+            (bulkUploadMode === 'replace'
+              ? '엑셀 수량 변경'
+              : '엑셀 수량 조정'),
+          source_type: 'excel',
+        }
+      })
+      .filter(Boolean)
+
+    const logResult = await batchUpsert({
+      supabase,
+      tableName: 'inventory_logs',
+      rows: logRows,
+      chunkSize: 500,
+      onProgress: (progress) => {
+        setUploadProgress({
+          total: targetRows.length,
+          processed: targetRows.length,
+          success: inventoryResult.success,
+          fail: inventoryResult.fail,
+          percent: 70 + Math.round(progress.percent * 0.3),
+        })
+      },
+    })
+
+    setUploading(false)
     setIsSaving(false)
 
-    alert(`재고 일괄 업로드 완료\n\n성공 ${successCount}건\n실패 ${failCount}건`)
+    alert(
+      `재고 일괄 업로드 완료\n\n성공 ${inventoryResult.success.toLocaleString()}건\n실패 ${inventoryResult.fail.toLocaleString()}건\n로그 ${logResult.success.toLocaleString()}건 저장`
+    )
 
     await fetchData()
   }
@@ -624,7 +755,7 @@ export function InventoryManager() {
           <Input
             type="file"
             accept=".xlsx,.xls,.csv"
-            disabled={isSaving}
+            disabled={isSaving || uploading}
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (!file) return
@@ -633,6 +764,27 @@ export function InventoryManager() {
               e.target.value = ''
             }}
           />
+
+          {uploading && uploadProgress && (
+            <div className="mt-4 rounded-xl border bg-blue-50 p-4 text-sm text-blue-700">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">업로드 중...</p>
+                <p>{uploadProgress.percent}%</p>
+              </div>
+
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                />
+              </div>
+
+              <p className="mt-2 text-xs">
+                {uploadProgress.processed.toLocaleString()} /{' '}
+                {uploadProgress.total.toLocaleString()}건 처리 중
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -786,7 +938,9 @@ export function InventoryManager() {
 
                   return (
                     <tr key={item.id} className="border-b">
-                      <td className="p-3 text-center">{index + 1}</td>
+                      <td className="p-3 text-center">
+                        {(currentPage - 1) * pageSize + index + 1}
+                      </td>
 
                       <td className="p-3 text-center">
                         {showImage ? (
@@ -821,7 +975,7 @@ export function InventoryManager() {
                       </td>
 
                       <td className="p-3 text-center">
-                        {mapping ? `${mapping.color_code} ${mapping.color_name || ''}` : '-'}
+                        {mapping ? `${String(mapping.color_code).padStart(2, '0')} ${mapping.color_name || ''}` : '-'}
                       </td>
 
                       <td className="p-3 text-center">
