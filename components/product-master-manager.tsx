@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
 
 type ColorCodeRow = {
   id: string
@@ -60,6 +61,9 @@ export function ProductMasterManager() {
   const [selectedSizeGroupId, setSelectedSizeGroupId] = useState('')
 
   const [isSaving, setIsSaving] = useState(false)
+
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<BulkProgress | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -217,7 +221,7 @@ export function ProductMasterManager() {
       products.map((product) => product.model_name)
     )
 
-    const insertRows = rows
+    const uploadRows = rows
       .map((row) => {
         const modelName = String(row.모델명 || row.model_name || '').trim()
 
@@ -249,28 +253,50 @@ export function ProductMasterManager() {
           season_code: seasonCodeValue,
           status: '기존등록',
           note: '기존 사용 모델명 일괄 등록',
+          updated_at: new Date().toISOString(),
         }
       })
       .filter(Boolean)
 
-    if (insertRows.length === 0) {
+    const uniqueRows = Array.from(
+      new Map(
+        uploadRows.map((row) => [row!.model_name, row])
+      ).values()
+    )
+
+    if (uniqueRows.length === 0) {
       alert('신규 등록할 모델명이 없습니다.')
       return
     }
 
+    setUploading(true)
     setIsSaving(true)
+    setUploadProgress({
+      total: uniqueRows.length,
+      processed: 0,
+      success: 0,
+      fail: 0,
+      percent: 0,
+    })
 
-    const { error } = await supabase.from('product_master').insert(insertRows)
+    const result = await batchUpsert({
+      supabase,
+      tableName: 'product_master',
+      rows: uniqueRows,
+      onConflict: 'model_name',
+      chunkSize: 500,
+      onProgress: setUploadProgress,
+    })
 
+    setUploading(false)
     setIsSaving(false)
 
-    if (error) {
-      alert(`모델명 일괄 등록 실패\n\n${error.message}`)
-      return
-    }
-
     alert(
-      `모델명 일괄 등록 완료\n\n전체 ${rows.length}건 중 신규 ${insertRows.length}건 등록`
+      `모델명 일괄 등록 완료\n\n전체 ${rows.length.toLocaleString()}건\n처리 ${uniqueRows.length.toLocaleString()}건\n성공 ${result.success.toLocaleString()}건\n실패 ${result.fail.toLocaleString()}건${
+        result.errors?.length
+          ? `\n\n오류 예시:\n${result.errors.slice(0, 3).join('\n')}`
+          : ''
+      }`
     )
 
     await fetchData()
@@ -358,7 +384,8 @@ export function ProductMasterManager() {
           <Input
             type="file"
             accept=".xlsx,.xls,.csv"
-            disabled={isSaving}
+            disabled={isSaving || uploading}
+                        
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (!file) return
@@ -367,6 +394,26 @@ export function ProductMasterManager() {
               e.target.value = ''
             }}
           />
+          {uploading && uploadProgress && (
+            <div className="mt-4 rounded-xl border bg-blue-50 p-4 text-sm text-blue-700">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">업로드 중...</p>
+                <p>{uploadProgress.percent}%</p>
+              </div>
+
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                />
+              </div>
+
+              <p className="mt-2 text-xs">
+                {uploadProgress.processed.toLocaleString()} /{' '}
+                {uploadProgress.total.toLocaleString()}건 처리 중
+              </p>
+            </div>
+          )}          
         </div>
       </section>
 

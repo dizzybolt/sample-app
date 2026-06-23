@@ -174,9 +174,9 @@ export function InboundSheetClient({
       .sort()
       .at(-1) || '-'
 
-    useEffect(() => {
-      fetchWarehouses()
-    }, [])
+  useEffect(() => {
+    fetchWarehouses()
+  }, [])
 
   const [inboundDate, setInboundDate] = useState(
     toKoreaDate(representative?.inbound_at) || ''
@@ -260,62 +260,62 @@ export function InboundSheetClient({
     XLSX.writeFile(workbook, `입고확인서_${inboundDate || date}_${chinaCode}.xlsx`)
   }
 
-    const exportInboundExcelWithImages = async () => {
-      const rows = samples.flatMap((sample) =>
-        sizeLabels.map((size) => ({
-          이미지URL: sample.image_url || '',
-          썸네일: '',
-          중국품번: sample.china_code || '',
-          한국품번: sample.korea_code || '',
-          색상코드: sample.color_code || '',
-          색상명: sample.color_name || '',
-          사이즈: size,
-          입고수량: getBatchReceivedQty(sample.id, size),
-          구분: selectedBatch?.batch_no
-            ? `${selectedBatch.batch_no}차 입고`
-            : '입고',
-          비고: sample.note || sample.memo || '',
-        }))
-      )
+  const exportInboundExcelWithImages = async () => {
+    const rows = samples.flatMap((sample) =>
+      sizeLabels.map((size) => ({
+        이미지URL: sample.image_url || '',
+        썸네일: '',
+        중국품번: sample.china_code || '',
+        한국품번: sample.korea_code || '',
+        색상코드: sample.color_code || '',
+        색상명: sample.color_name || '',
+        사이즈: size,
+        입고수량: getBatchReceivedQty(sample.id, size),
+        구분: selectedBatch?.batch_no
+          ? `${selectedBatch.batch_no}차 입고`
+          : '입고',
+        비고: sample.note || sample.memo || '',
+      }))
+    )
 
-      const extraRowsForExcel = extraRows.flatMap((row) =>
-        sizeLabels.map((size) => ({
-          이미지URL: row.image_url || '',
-          썸네일: '',
-          중국품번: chinaCode,
-          한국품번: row.korea_code || '',
-          색상코드: row.color_code || '',
-          색상명: row.color_name || '',
-          사이즈: size,
-          입고수량: getBatchExtraReceivedQty(row, size),
-          구분: selectedBatch?.batch_no
-            ? `${selectedBatch.batch_no}차 추가행`
-            : '추가행',
-          비고: row.memo || '',
-        }))
-      )
+    const extraRowsForExcel = extraRows.flatMap((row) =>
+      sizeLabels.map((size) => ({
+        이미지URL: row.image_url || '',
+        썸네일: '',
+        중국품번: chinaCode,
+        한국품번: row.korea_code || '',
+        색상코드: row.color_code || '',
+        색상명: row.color_name || '',
+        사이즈: size,
+        입고수량: getBatchExtraReceivedQty(row, size),
+        구분: selectedBatch?.batch_no
+          ? `${selectedBatch.batch_no}차 추가행`
+          : '추가행',
+        비고: row.memo || '',
+      }))
+    )
 
-      const templateRes = await fetch('/excel/inbound-sheet-template.xlsm')
-      const templateBuffer = await templateRes.arrayBuffer()
+    const templateRes = await fetch('/excel/inbound-sheet-template.xlsm')
+    const templateBuffer = await templateRes.arrayBuffer()
 
-      const workbook = XLSX.read(templateBuffer, {
-        type: 'array',
-        bookVBA: true,
-      })
+    const workbook = XLSX.read(templateBuffer, {
+      type: 'array',
+      bookVBA: true,
+    })
 
-      const worksheetName = workbook.SheetNames[0]
-      const worksheet = XLSX.utils.json_to_sheet([...rows, ...extraRowsForExcel])
+    const worksheetName = workbook.SheetNames[0]
+    const worksheet = XLSX.utils.json_to_sheet([...rows, ...extraRowsForExcel])
 
-      workbook.Sheets[worksheetName] = worksheet
+    workbook.Sheets[worksheetName] = worksheet
 
-      XLSX.writeFile(
-        workbook,
-        `입고확인서_${inboundDate || date}_${chinaCode}.xlsm`,
-        {
-          bookType: 'xlsm',
-        }
-      )
-    }
+    XLSX.writeFile(
+      workbook,
+      `입고확인서_${inboundDate || date}_${chinaCode}.xlsm`,
+      {
+        bookType: 'xlsm',
+      }
+    )
+  }
 
   const getExpectedQty = (sampleId: string, sizeLabel: string) => {
     const found = orderQuantities.find(
@@ -353,6 +353,22 @@ export function InboundSheetClient({
     )
 
     return found?.qty || 0
+  }
+
+  const updateKoreaCode = (sampleId: string, value: string) => {
+    setSamples((prev) =>
+      prev.map((sample) =>
+        sample.id === sampleId ? { ...sample, korea_code: value } : sample
+      )
+    )
+  }
+
+  const updateExtraKoreaCode = (rowId: string, value: string) => {
+    setExtraRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, korea_code: value } : row
+      )
+    )
   }
 
   const updateReceivedQty = (
@@ -641,6 +657,7 @@ export function InboundSheetClient({
       const { error } = await supabase
         .from('order_extra_rows')
         .update({
+          korea_code: row.korea_code || null,
           inbound_size_quantities:
             row.inbound_size_quantities || row.size_quantities || {},
           updated_at: new Date().toISOString(),
@@ -681,11 +698,7 @@ export function InboundSheetClient({
 
     if (error) {
       console.error(error)
-
-      alert(
-        `입고 회차 추가 실패\n\n${error.message}`
-      )
-
+      alert(`입고 회차 추가 실패\n\n${error.message}`)
       return
     }
 
@@ -776,19 +789,25 @@ export function InboundSheetClient({
 
     const rowsToInsert = batchQuantities
       .filter((item) => item.batch_id === selectedBatchId)
-      .map((item) => ({
-        batch_id: selectedBatchId,
-        sample_entry_id: item.sample_entry_id || null,
-        china_code: item.china_code || chinaCode,
-        korea_code: item.korea_code || null,
-        color_code: item.color_code || null,
-        color_name: item.color_name || null,
-        size_group_name: item.size_group_name || sizeGroupName,
-        size_label: item.size_label || '',
-        qty: Number(item.qty || 0),
-        is_extra: item.is_extra || false,
-        memo: item.memo || null,
-      }))
+      .map((item) => {
+        const latestKoreaCode = item.is_extra
+          ? extraRows.find((r) => r.id === item.sample_entry_id)?.korea_code
+          : samples.find((s) => s.id === item.sample_entry_id)?.korea_code
+
+        return {
+          batch_id: selectedBatchId,
+          sample_entry_id: item.sample_entry_id || null,
+          china_code: item.china_code || chinaCode,
+          korea_code: latestKoreaCode || item.korea_code || null,
+          color_code: item.color_code || null,
+          color_name: item.color_name || null,
+          size_group_name: item.size_group_name || sizeGroupName,
+          size_label: item.size_label || '',
+          qty: Number(item.qty || 0),
+          is_extra: item.is_extra || false,
+          memo: item.memo || null,
+        }
+      })
 
     if (rowsToInsert.length > 0) {
       const { error: insertError } = await supabase
@@ -822,6 +841,7 @@ export function InboundSheetClient({
       const { error: sampleError } = await supabase
         .from('sample_entries')
         .update({
+          korea_code: sample.korea_code || null,
           inbound_expected_qty: expectedTotal,
           inbound_received_qty: cumulativeTotal,
           inbound_status: nextStatus,
@@ -836,6 +856,8 @@ export function InboundSheetClient({
         return
       }
     }
+
+    await saveExtraRows()
 
     setSamples((prev) =>
       prev.map((sample) => {
@@ -931,12 +953,18 @@ export function InboundSheetClient({
     }
 
     for (const item of currentBatchRows) {
-      if (!item.korea_code || !item.color_code || !item.size_label) {
+      const latestKoreaCode = item.is_extra
+        ? extraRows.find((r) => r.id === item.sample_entry_id)?.korea_code
+        : samples.find((s) => s.id === item.sample_entry_id)?.korea_code
+
+      const finalKoreaCode = latestKoreaCode || item.korea_code
+
+      if (!finalKoreaCode || !item.color_code || !item.size_label) {
         continue
       }
 
       const sku = buildInventorySku(
-        item.korea_code,
+        finalKoreaCode,
         item.color_code,
         item.size_label
       )
@@ -1041,6 +1069,23 @@ export function InboundSheetClient({
   }
 
   const handleCompleteInbound = async () => {
+    const hasMissingSampleCode = samples.some(
+      (s) => !s.korea_code || s.korea_code.trim() === ''
+    )
+    const hasMissingExtraCode = extraRows.some(
+      (r) => !r.korea_code || r.korea_code.trim() === ''
+    )
+
+    if (hasMissingSampleCode || hasMissingExtraCode) {
+      alert('⚠️ 한국품번이 누락된 상품이 존재합니다.\n모든 항목의 한국품번을 빠짐없이 입력해야 완료가 가능합니다.')
+      return
+    }
+
+    if (!inventoryWarehouseId) {
+      alert('재고 반영 창고를 선택해 주세요.')
+      return
+    }
+
     const ok = window.confirm(
       '입고완료 처리할까요?\n현재 선택된 입고 회차의 수량이 선택한 창고 재고에 반영됩니다.'
     )
@@ -1111,12 +1156,7 @@ export function InboundSheetClient({
                 입고관리
               </Button>
             </Link>
-            {/*
-            <Button variant="outline" onClick={exportInboundExcel}>
-              <Download className="mr-2 h-4 w-4" />
-              엑셀 다운로드
-            </Button>
-            */}
+
             <Button
               type="button"
               variant="outline"
@@ -1130,37 +1170,36 @@ export function InboundSheetClient({
               <Printer className="mr-2 h-4 w-4" />
               프린트
             </Button>
-            
-            {/*<Button variant="outline" onClick={handleSaveQty} disabled={isSaving}>
-              <Save className="mr-2 h-4 w-4" />
-              수량 저장
-            </Button>*/}
-            
 
             <Button variant="outline" onClick={handleDelay} disabled={isSaving}>
               입고지연
             </Button>
 
             <Select
-                value={inventoryWarehouseId}
-                onValueChange={setInventoryWarehouseId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="창고 선택" />
-                </SelectTrigger>
+              value={inventoryWarehouseId}
+              onValueChange={setInventoryWarehouseId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="창고 선택" />
+              </SelectTrigger>
 
-                <SelectContent>
-                  {warehouses.map((warehouse) => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SelectContent>
+                {warehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <Button
               onClick={handleCompleteInbound}
-              disabled={isSaving || samples.length === 0}
+              disabled={
+                isSaving || 
+                samples.length === 0 || 
+                samples.some((s) => !s.korea_code || s.korea_code.trim() === '') ||
+                extraRows.some((r) => !r.korea_code || r.korea_code.trim() === '')
+              }
             >
               <CheckCircle2 className="mr-2 h-4 w-4" />
               입고완료
@@ -1305,9 +1344,23 @@ export function InboundSheetClient({
                   {samples.map((sample) => (
                     <tr key={sample.id} className="border-b text-center">
                       <td className="border px-3 py-2">{sample.china_code}</td>
+                      
+                      {/* 🛠️ [타입 에러 수정완료] !! 연산자를 사용하여 boolean 타입으로 강제 매핑 */}
                       <td className="border px-3 py-2">
-                        {sample.korea_code || '-'}
+                        <input
+                          type="text"
+                          value={sample.korea_code || ''}
+                          onChange={(e) => updateKoreaCode(sample.id, e.target.value)}
+                          placeholder="품번 필수"
+                          disabled={!!selectedBatch?.inventory_reflected}
+                          className={`w-32 rounded-md border px-2 py-1 text-center font-medium ${
+                            !sample.korea_code || sample.korea_code.trim() === ''
+                              ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-400 focus:ring-red-400'
+                              : 'border-gray-300 bg-white text-gray-900'
+                          }`}
+                        />
                       </td>
+
                       <td className="border px-3 py-2">
                         {sample.color_code || '-'}
                       </td>
@@ -1346,9 +1399,23 @@ export function InboundSheetClient({
                   {extraRows.map((row) => (
                     <tr key={row.id} className="border-b bg-blue-50/40 text-center">
                       <td className="border px-3 py-2">{chinaCode}</td>
+                      
+                      {/* 🛠️ [타입 에러 수정완료] !! 연산자를 사용하여 boolean 타입으로 강제 매핑 */}
                       <td className="border px-3 py-2">
-                        {row.korea_code || '-'}
+                        <input
+                          type="text"
+                          value={row.korea_code || ''}
+                          onChange={(e) => updateExtraKoreaCode(row.id, e.target.value)}
+                          placeholder="품번 필수"
+                          disabled={!!selectedBatch?.inventory_reflected}
+                          className={`w-32 rounded-md border px-2 py-1 text-center font-medium ${
+                            !row.korea_code || row.korea_code.trim() === ''
+                              ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-400 focus:ring-red-400'
+                              : 'border-gray-300 bg-white text-gray-900'
+                          }`}
+                        />
                       </td>
+
                       <td className="border px-3 py-2">
                         {row.color_code || '-'}
                       </td>
@@ -1360,7 +1427,6 @@ export function InboundSheetClient({
                         <td key={size} className="border px-2 py-2">
                           <input
                             inputMode="numeric"
-
                             value={formatNumber(getBatchExtraReceivedQty(row, size))}
                             onChange={(e) =>
                               updateBatchExtraReceivedQty(row, size, e.target.value)
