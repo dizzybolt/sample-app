@@ -1,7 +1,7 @@
 'use client'
 
 import * as XLSX from 'xlsx'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Fragment } from 'react' // 🟢 Fragment import 추가
 import { createClient } from '@/lib/supabase/client'
 import type { Inventory, InventoryLog, Warehouse, SkuMapping, ProductImage } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -25,10 +25,11 @@ export function InventoryManager() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [inventories, setInventories] = useState<Inventory[]>([])
 
-  const [warehouseId, setWarehouseId] = useState('')
-  const [sku, setSku] = useState('')
-  const [qty, setQty] = useState('')
-  const [reason, setReason] = useState('')
+  // 🛠️ 인라인 수정을 위한 임시 입력 State들
+  const [editWarehouseId, setEditWarehouseId] = useState('')
+  const [editSku, setEditSku] = useState('')
+  const [editQty, setEditQty] = useState('')
+  const [editReason, setEditReason] = useState('')
 
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -41,7 +42,7 @@ export function InventoryManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const [bulkUploadMode, setBulkUploadMode] = useState<'replace' | 'adjust'>(
-  'replace'
+    'replace'
   )
 
   const [uploading, setUploading] = useState(false)
@@ -62,6 +63,12 @@ export function InventoryManager() {
   }, [currentPage])
 
   async function fetchInventoryLogs(sku: string) {
+    if (selectedLogSku === sku) {
+      setSelectedLogSku('')
+      setInventoryLogs([])
+      return
+    }
+
     setSelectedLogSku(sku)
 
     const { data, error } = await supabase
@@ -93,8 +100,11 @@ export function InventoryManager() {
     ])
 
     setWarehouses((warehouseRes.data || []) as Warehouse[])
-    setInventories((inventoryRes.data || []) as Inventory[])
+    const nextInventories = (inventoryRes.data || []) as Inventory[]
+    setInventories(nextInventories)
     setTotalCount(inventoryRes.count || 0)
+
+    await fetchInventoryRelations(nextInventories)
   }
 
   async function fetchWarehouses() {
@@ -142,10 +152,6 @@ export function InventoryManager() {
 
         query = query.or(conditions)
       }
-    }
-
-    if (warehouseId) {
-      query = query.eq('warehouse_id', warehouseId)
     }
 
     const { data, error, count } = await query
@@ -198,48 +204,48 @@ export function InventoryManager() {
   }
 
   const filteredInventories = useMemo(() => {
-  return [...inventories].sort((a, b) => {
-    const dateA = a.work_date || a.updated_at || ''
-    const dateB = b.work_date || b.updated_at || ''
+    return [...inventories].sort((a, b) => {
+      const dateA = a.work_date || a.updated_at || ''
+      const dateB = b.work_date || b.updated_at || ''
 
-    const dateCompare = dateB.localeCompare(dateA)
+      const dateCompare = dateB.localeCompare(dateA)
 
-    if (dateCompare !== 0) return dateCompare
+      if (dateCompare !== 0) return dateCompare
 
-    const mappingA = getSkuMapping(a.sku)
-    const mappingB = getSkuMapping(b.sku)
+      const mappingA = getSkuMapping(a.sku)
+      const mappingB = getSkuMapping(b.sku)
 
-    const modelA = mappingA?.model_name || a.sku.split('_')[0] || ''
-    const modelB = mappingB?.model_name || b.sku.split('_')[0] || ''
+      const modelA = mappingA?.model_name || a.sku.split('_')[0] || ''
+      const modelB = mappingB?.model_name || b.sku.split('_')[0] || ''
 
-    const modelCompare = modelA.localeCompare(modelB, 'ko')
+      const modelCompare = modelA.localeCompare(modelB, 'ko')
 
-    if (modelCompare !== 0) return modelCompare
+      if (modelCompare !== 0) return modelCompare
 
-    const colorA = mappingA?.color_code || a.sku.split('_')[1] || ''
-    const colorB = mappingB?.color_code || b.sku.split('_')[1] || ''
+      const colorA = mappingA?.color_code || a.sku.split('_')[1] || ''
+      const colorB = mappingB?.color_code || b.sku.split('_')[1] || ''
 
-    const colorCompare = colorA.localeCompare(colorB, 'ko', { numeric: true })
+      const colorCompare = colorA.localeCompare(colorB, 'ko', { numeric: true })
 
-    if (colorCompare !== 0) return colorCompare
+      if (colorCompare !== 0) return colorCompare
 
-    const sizeA = mappingA?.size_code || a.sku.split('_')[2] || ''
-    const sizeB = mappingB?.size_code || b.sku.split('_')[2] || ''
+      const sizeA = mappingA?.size_code || a.sku.split('_')[2] || ''
+      const sizeB = mappingB?.size_code || b.sku.split('_')[2] || ''
 
-    return sizeA.localeCompare(sizeB, 'ko', { numeric: true })
-  })
-}, [inventories, skuMappings])
+      return sizeA.localeCompare(sizeB, 'ko', { numeric: true })
+    })
+  }, [inventories, skuMappings])
 
   function getWarehouseName(id: string) {
     return warehouses.find((item) => item.id === id)?.name || '-'
   }
 
   function normalizeSku(sku: string) {
-  return sku
-    .trim()
-    .toUpperCase()
-    .replace(/_FREE$/, '_F')
-}
+    return sku
+      .trim()
+      .toUpperCase()
+      .replace(/_FREE$/, '_F')
+  }
 
   function getSkuMapping(sku: string) {
     const normalizedSku = normalizeSku(sku)
@@ -265,25 +271,24 @@ export function InventoryManager() {
 
   function handleEditInventory(item: Inventory) {
     setEditingId(item.id)
-
-    setWarehouseId(item.warehouse_id)
-    setSku(item.sku)
-    setQty(String(item.qty || 0))
-    setReason(item.note || '')
+    setEditWarehouseId(item.warehouse_id)
+    setEditSku(item.sku)
+    setEditQty(String(item.qty || 0))
+    setEditReason(item.note || '')
   }
 
   async function handleSaveInventory() {
-    if (!warehouseId) {
+    if (!editWarehouseId) {
       alert('창고를 선택해 주세요.')
       return
     }
 
-    if (!sku.trim()) {
+    if (!editSku.trim()) {
       alert('SKU를 입력해 주세요.')
       return
     }
 
-    const nextQty = Number(qty.replaceAll(',', ''))
+    const nextQty = Number(editQty.replaceAll(',', ''))
 
     if (Number.isNaN(nextQty)) {
       alert('수량을 숫자로 입력해 주세요.')
@@ -291,78 +296,54 @@ export function InventoryManager() {
     }
 
     setIsSaving(true)
-
-    const normalizedSku = sku.trim()
+    const normalizedSku = editSku.trim()
 
     const { data: existing } = await supabase
       .from('inventory')
       .select('*')
-      .eq('warehouse_id', warehouseId)
-      .eq('sku', normalizedSku)
+      .eq('id', editingId)
       .maybeSingle()
 
     const beforeQty = Number(existing?.qty || 0)
 
-    let inventoryId = existing?.id as string | undefined
+    const { error } = await supabase
+      .from('inventory')
+      .update({
+        warehouse_id: editWarehouseId,
+        sku: normalizedSku,
+        qty: nextQty,
+        note: editReason.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', editingId)
 
-    if (existing) {
-      const { error } = await supabase
-        .from('inventory')
-        .update({
-          qty: nextQty,
-          note: reason.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id)
-
-      if (error) {
-        setIsSaving(false)
-        alert(`재고 수정 실패\n\n${error.message}`)
-        return
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('inventory')
-        .insert({
-          warehouse_id: warehouseId,
-          sku: normalizedSku,
-          qty: nextQty,
-          note: reason.trim() || null,
-        })
-        .select('*')
-        .single()
-
-      if (error) {
-        setIsSaving(false)
-        alert(`재고 등록 실패\n\n${error.message}`)
-        return
-      }
-
-      inventoryId = data.id
+    if (error) {
+      setIsSaving(false)
+      alert(`재고 수정 실패\n\n${error.message}`)
+      return
     }
 
     const changeQty = nextQty - beforeQty
 
     await supabase.from('inventory_logs').insert({
-      inventory_id: inventoryId,
-      warehouse_id: warehouseId,
+      inventory_id: editingId,
+      warehouse_id: editWarehouseId,
       sku: normalizedSku,
-      change_type: existing ? '재고조정' : '신규등록',
+      change_type: '재고조정',
       change_qty: changeQty,
       before_qty: beforeQty,
       after_qty: nextQty,
-      reason: reason.trim() || null,
+      reason: editReason.trim() || null,
       source_type: 'manual',
     })
 
     setIsSaving(false)
-
-    alert('재고가 저장되었습니다.')
+    alert('재고 정보가 수정되었습니다.')
 
     setEditingId(null)
-    setSku('')
-    setQty('')
-    setReason('')
+    setEditSku('')
+    setEditQty('')
+    setEditReason('')
 
     await fetchData()
   }
@@ -408,7 +389,13 @@ export function InventoryManager() {
         const warehouseName = String(row.창고명 || row.warehouse_name || '').trim()
         const warehouseCode = String(row.창고코드 || row.warehouse_code || '').trim()
         const uploadSku = normalizeInventorySku(String(row.SKU || row.sku || '').trim())
-        const uploadQty = Number(String(row.수량 || row.qty || '0').replaceAll(',', ''))
+        
+        const rawQtyStr = String(row.수량 || row.qty || '0').replaceAll(',', '').trim()
+        let uploadQty = Number(rawQtyStr)
+        if (rawQtyStr === '-' || Number.isNaN(uploadQty) || uploadQty < 0) {
+          uploadQty = 0
+        }
+
         const uploadNote = String(row.비고 || row.note || '').trim()
 
         const targetWarehouse = warehouses.find((warehouse) => {
@@ -417,7 +404,7 @@ export function InventoryManager() {
           return false
         })
 
-        if (!targetWarehouse || !uploadSku || Number.isNaN(uploadQty)) {
+        if (!targetWarehouse || !uploadSku) {
           return null
         }
 
@@ -463,22 +450,30 @@ export function InventoryManager() {
     const targetWarehouseIds = Array.from(new Set(targetRows.map((row) => row.warehouse_id)))
     const targetSkus = Array.from(new Set(targetRows.map((row) => row.sku)))
 
-    const { data: existingRows, error: existingError } = await supabase
-      .from('inventory')
-      .select('*')
-      .in('warehouse_id', targetWarehouseIds)
-      .in('sku', targetSkus)
+    const existingRows: Inventory[] = []
+    const CHUNK_SIZE = 150
+    for (let i = 0; i < targetSkus.length; i += CHUNK_SIZE) {
+      const chunkSkus = targetSkus.slice(i, i + CHUNK_SIZE)
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('inventory')
+        .select('*')
+        .in('warehouse_id', targetWarehouseIds)
+        .in('sku', chunkSkus)
 
-    if (existingError) {
-      setUploading(false)
-      setIsSaving(false)
-      alert(`기존 재고 조회 실패\n\n${existingError.message}`)
-      return
+      if (chunkError) {
+        setUploading(false)
+        setIsSaving(false)
+        alert(`기존 재고 분할 조회 실패\n\n${chunkError.message}`)
+        return
+      }
+      if (chunkData) {
+        existingRows.push(...(chunkData as Inventory[]))
+      }
     }
 
     const existingMap = new Map<string, Inventory>()
 
-    ;((existingRows || []) as Inventory[]).forEach((item) => {
+    existingRows.forEach((item) => {
       existingMap.set(`${item.warehouse_id}__${item.sku}`, item)
     })
 
@@ -517,22 +512,30 @@ export function InventoryManager() {
       },
     })
 
-    const { data: savedRows, error: savedError } = await supabase
-      .from('inventory')
-      .select('*')
-      .in('warehouse_id', targetWarehouseIds)
-      .in('sku', targetSkus)
+    const savedRows: Inventory[] = []
+    for (let i = 0; i < targetSkus.length; i += CHUNK_SIZE) {
+      const chunkSkus = targetSkus.slice(i, i + CHUNK_SIZE)
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('inventory')
+        .select('*')
+        .in('warehouse_id', targetWarehouseIds)
+        .in('sku', chunkSkus)
 
-    if (savedError) {
-      setUploading(false)
-      setIsSaving(false)
-      alert(`저장된 재고 재조회 실패\n\n${savedError.message}`)
-      return
+      if (chunkError) {
+        setUploading(false)
+        setIsSaving(false)
+        alert(`저장된 재고 분할 재조회 실패\n\n${chunkError.message}`)
+        return
+      }
+      if (chunkData) {
+        savedRows.push(...(chunkData as Inventory[]))
+      }
     }
 
     const savedMap = new Map<string, Inventory>()
 
-    ;((savedRows || []) as Inventory[]).forEach((item) => {
+    savedRows.forEach((item) => {
+      existingMap.set(`${item.warehouse_id}__${item.sku}`, item)
       savedMap.set(`${item.warehouse_id}__${item.sku}`, item)
     })
 
@@ -634,90 +637,101 @@ export function InventoryManager() {
     await fetchData()
   }
 
+  function downloadInventoryExcel() {
+    const rows = filteredInventories.map(
+      (item, index) => ({
+        NO: index + 1,
+        창고: warehouses.find((w) => w.id === item.warehouse_id)?.name || '',
+        SKU: item.sku,
+        재고수량: item.qty,
+        기준일: item.work_date || item.updated_at?.slice(0, 10) || '',
+        비고: item.note || '',
+      })
+    )
+
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '재고목록')
+
+    const fileName = searchTerm.trim() ? `재고검색결과.xlsx` : `재고목록.xlsx`
+    XLSX.writeFile(workbook, fileName)
+  }
+
+  // 🟢 1,000개 제한 없는 전체 엑셀 다운로드 함수 보완 추가
+  async function downloadAllInventoryExcel() {
+    const ok = window.confirm('전체 재고 데이터를 조회하여 엑셀로 다운로드합니다. 진행할까요?')
+    if (!ok) return
+
+    const keyword = searchTerm.trim()
+    const targetItems: any[] = []
+    
+    let page = 0
+    const FETCH_LIMIT = 1000
+    let hasMore = true
+
+    while (hasMore) {
+      let query = supabase
+        .from('inventory')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .range(page * FETCH_LIMIT, (page + 1) * FETCH_LIMIT - 1)
+
+      if (keyword) {
+        const keywords = keyword.split(',').map((v) => v.trim()).filter(Boolean)
+        if (keywords.length === 1) {
+          query = query.ilike('sku', `%${keywords[0]}%`)
+        } else {
+          const conditions = keywords.map((value) => `sku.ilike.%${value}%`).join(',')
+          query = query.or(conditions)
+        }
+      }
+
+      const { data: chunkData, error } = await query
+
+      if (error) {
+        alert(`전체 재고 조회 중 오류 발생 (페이지 ${page + 1})\n\n${error.message}`)
+        return
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        targetItems.push(...chunkData)
+        if (chunkData.length < FETCH_LIMIT) {
+          hasMore = false
+        } else {
+          page++
+        }
+      } else {
+        hasMore = false
+      }
+    }
+
+    if (targetItems.length === 0) {
+      alert('다운로드할 재고 데이터가 없습니다.')
+      return
+    }
+
+    const rows = targetItems.map((item, index) => ({
+      NO: index + 1,
+      창고: warehouses.find((w) => w.id === item.warehouse_id)?.name || '',
+      SKU: item.sku,
+      재고수량: item.qty,
+      기준일: item.work_date || item.updated_at?.slice(0, 10) || '',
+      비고: item.note || '',
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '전체재고목록')
+
+    const fileName = keyword 
+      ? `전체재고검색결과_${new Date().toISOString().slice(0, 10)}.xlsx` 
+      : `전체재고목록_${new Date().toISOString().slice(0, 10)}.xlsx`
+
+    XLSX.writeFile(workbook, fileName)
+  }
+
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        <h2 className="font-semibold text-gray-900">재고 등록/수정</h2>
-
-        {editingId && (
-          <p className="mt-2 text-sm text-blue-600">
-            재고 수정 모드
-          </p>
-        )}
-
-        <div className="mt-4 grid gap-3 md:grid-cols-[1.5fr_2fr_1fr_2fr_auto]">
-          <div className="relative">
-            <Select
-              value={warehouseId}
-              onValueChange={setWarehouseId}
-            >
-              <SelectTrigger
-                className={
-                  warehouseId
-                    ? 'w-full pr-10 [&>svg]:hidden'
-                    : 'w-full'
-                }
-              >
-                <SelectValue placeholder="창고 선택" />
-              </SelectTrigger>
-
-              <SelectContent>
-                {warehouses.map((warehouse) => (
-                  <SelectItem
-                    key={warehouse.id}
-                    value={warehouse.id}
-                  >
-                    {warehouse.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {warehouseId && (
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-gray-400 hover:text-red-500"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-
-                  setWarehouseId('')
-                }}
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          <Input
-            value={sku}
-            onChange={(e) => setSku(e.target.value)}
-            placeholder="SKU"
-          />
-
-          <Input
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            placeholder="수량"
-            inputMode="numeric"
-          />
-
-          <Input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="사유 / 비고"
-          />
-
-          <Button
-            type="button"
-            disabled={isSaving}
-            onClick={handleSaveInventory}
-          >
-            저장
-          </Button>
-        </div>
-      </section>
-
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-gray-900">엑셀 일괄 등록/수정</h2>
 
@@ -790,7 +804,6 @@ export function InventoryManager() {
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          {/* 상단: 제목 / 총 건수 / 페이지 */}
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-semibold text-gray-900">재고 목록</h2>
 
@@ -825,61 +838,13 @@ export function InventoryManager() {
             </div>
           </div>
 
-          {/* 우측 */}
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-[620px]">
-            <div className="relative w-[180px]">
-              <Select value={warehouseId} onValueChange={setWarehouseId}>
-                <SelectTrigger className={warehouseId ? 'w-full pr-10 [&>svg]:hidden' : 'w-full'}>
-                  <SelectValue placeholder="전체 창고" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {warehouses.map((warehouse) => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {warehouseId && (
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-gray-400 hover:text-red-500"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    setWarehouseId('')
-                    setCurrentPage(1)
-                    fetchData()
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
             <div className="relative flex-1">
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="SKU 검색 (, 로 복수검색)"
-                className={searchTerm ? 'pr-9' : ''}
               />
-
-              {searchTerm && (
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-gray-400 hover:text-red-500"
-                  onClick={() => {
-                    setSearchTerm('')
-                    setCurrentPage(1)
-                    fetchData()
-                  }}
-                >
-                  ✕
-                </button>
-              )}
             </div>
 
             <Button
@@ -896,9 +861,18 @@ export function InventoryManager() {
             <Button
               type="button"
               variant="outline"
+              className="bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200"
+              onClick={downloadAllInventoryExcel}
+            >
+              전체 엑셀
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
               onClick={downloadInventoryExcel}
             >
-              엑셀
+              현재페이지 엑셀
             </Button>
           </div>
         </div>
@@ -915,8 +889,8 @@ export function InventoryManager() {
                 <th className="p-3 text-center">모델명</th>
                 <th className="p-3 text-center">색상</th>
                 <th className="p-3 text-center">사이즈</th>
-                <th className="p-3 text-center">SKU</th>
-                <th className="p-3 text-center">현재고</th>
+                <th className="p-3 text-center font-semibold">SKU</th>
+                <th className="p-3 text-center font-semibold">현재고</th>
                 <th className="p-3 text-center">최근수정일</th>
                 <th className="p-3 text-left">비고</th>
                 <th className="p-3 text-right">관리</th>
@@ -932,103 +906,224 @@ export function InventoryManager() {
                 </tr>
               ) : (
                 filteredInventories.map((item, index) => {
+                  const isEditing = editingId === item.id
+                  const isLogOpen = selectedLogSku === item.sku
+
                   const mapping = getSkuMapping(item.sku)
                   const image = getProductImage(mapping?.model_name)
                   const showImage = shouldShowModelImage(item, index)
 
                   return (
-                    <tr key={item.id} className="border-b">
-                      <td className="p-3 text-center">
-                        {(currentPage - 1) * pageSize + index + 1}
-                      </td>
+                    <Fragment key={item.id}>
+                      <tr className={`border-b ${isEditing ? 'bg-blue-50/50' : ''}`}>
+                        <td className="p-3 text-center">
+                          {(currentPage - 1) * pageSize + index + 1}
+                        </td>
 
-                      <td className="p-3 text-center">
-                        {showImage ? (
-                          image?.image_url ? (
-                            <img
-                              src={image.image_url}
-                              alt={mapping?.model_name || item.sku}
-                              className="mx-auto h-14 w-14 rounded border object-cover"
+                        <td className="p-3 text-center">
+                          {showImage ? (
+                            image?.image_url ? (
+                              <img
+                                src={image.image_url}
+                                alt={mapping?.model_name || item.sku}
+                                className="mx-auto h-14 w-14 rounded border object-cover" // 👈 이 부분
+                              />
+                            ) : (
+                              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded border bg-gray-50 text-[10px] text-gray-400">
+                                NO IMAGE
+                              </div>
+                            )
+                          ) : null}
+                        </td>
+
+                        <td className="p-3 text-center">
+                          {isEditing ? (
+                            <Select value={editWarehouseId} onValueChange={setEditWarehouseId}>
+                              <SelectTrigger className="w-[120px] mx-auto h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {warehouses.map((w) => (
+                                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            getWarehouseName(item.warehouse_id)
+                          )}
+                        </td>
+
+                        <td className="p-3 text-center">{mapping?.item_no || '-'}</td>
+                        <td className="p-3 text-center">{mapping?.single_no || '-'}</td>
+                        <td className="p-3 text-center">{mapping?.model_name || '-'}</td>
+                        <td className="p-3 text-center">
+                          {mapping ? `${String(mapping.color_code).padStart(2, '0')} ${mapping.color_name || ''}` : '-'}
+                        </td>
+                        <td className="p-3 text-center">{mapping?.size_code || '-'}</td>
+
+                        <td className="p-3 text-center font-medium">
+                          {isEditing ? (
+                            <Input 
+                              value={editSku} 
+                              onChange={(e) => setEditSku(e.target.value)} 
+                              className="w-[140px] mx-auto h-8 text-xs text-center"
                             />
                           ) : (
-                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded border bg-gray-50 text-[10px] text-gray-400">
-                              NO IMAGE
+                            item.sku
+                          )}
+                        </td>
+
+                        <td className="p-3 text-center font-bold">
+                          {isEditing ? (
+                            <Input 
+                              value={editQty} 
+                              onChange={(e) => setEditQty(e.target.value)} 
+                              className="w-[70px] mx-auto h-8 text-xs text-center font-bold"
+                              inputMode="numeric"
+                            />
+                          ) : (
+                            formatNumber(item.qty)
+                          )}
+                        </td>
+
+                        <td className="p-3 text-center">
+                          {item.work_date || item.updated_at?.slice(0, 10) || '-'}
+                        </td>
+
+                        <td className="p-3 text-left">
+                          {isEditing ? (
+                            <Input 
+                              value={editReason} 
+                              onChange={(e) => setEditReason(e.target.value)} 
+                              placeholder="수정 사유 입력"
+                              className="w-full h-8 text-xs"
+                            />
+                          ) : (
+                            item.note || '-'
+                          )}
+                        </td>
+
+                        <td className="p-3">
+                          <div className="flex justify-end gap-2">
+                            {isEditing ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                                  disabled={isSaving}
+                                  onClick={handleSaveInventory}
+                                >
+                                  저장
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8"
+                                  onClick={() => setEditingId(null)}
+                                >
+                                  취소
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={isLogOpen ? "default" : "outline"}
+                                  className="h-8"
+                                  onClick={() => fetchInventoryLogs(item.sku)}
+                                >
+                                  로그
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8"
+                                  onClick={() => handleEditInventory(item)}
+                                >
+                                  수정
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-8"
+                                  onClick={() => handleDeleteInventory(item)}
+                                >
+                                  삭제
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+
+                      {isLogOpen && (
+                        <tr className="bg-gray-50/70 border-b">
+                          <td colSpan={13} className="p-4 bg-gray-50/50">
+                            <div className="rounded-xl border bg-white p-4 shadow-inner max-w-4xl mx-auto">
+                              <div className="flex items-center justify-between border-b pb-2 mb-3">
+                                <span className="font-semibold text-gray-800 text-xs">
+                                  📊 [ {item.sku} ] 재고 변경 로그 기록
+                                </span>
+                                <button 
+                                  onClick={() => { setSelectedLogSku(''); setInventoryLogs([]); }}
+                                  className="text-xs text-gray-400 hover:text-gray-600"
+                                >
+                                  닫기 ✕
+                                </button>
+                              </div>
+                              
+                              <table className="w-full text-xs text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b bg-gray-100 text-gray-600 font-medium">
+                                    <th className="p-2">변경일자</th>
+                                    <th className="p-2">작업구분</th>
+                                    <th className="p-2 text-right">변동수량</th>
+                                    <th className="p-2 text-right">변경 전</th>
+                                    <th className="p-2 text-right">변경 후</th>
+                                    <th className="p-2 pl-4">변경 사유 / 비고</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {inventoryLogs.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={6} className="p-4 text-center text-gray-400">
+                                        조회된 변경 로그 내역이 없습니다.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    inventoryLogs.map((log) => (
+                                      <tr key={log.id} className="border-b last:border-0 hover:bg-gray-50/50">
+                                        <td className="p-2 text-gray-500">
+                                          {log.work_date || log.created_at?.slice(0, 10) || '-'}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                            log.change_type === '삭제' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-700'
+                                          }`}>
+                                            {log.change_type}
+                                          </span>
+                                        </td>
+                                        <td className={`p-2 text-right font-bold ${Number(log.change_qty) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                          {Number(log.change_qty) >= 0 ? `+${formatNumber(log.change_qty)}` : formatNumber(log.change_qty)}
+                                        </td>
+                                        <td className="p-2 text-right text-gray-500">{formatNumber(log.before_qty)}</td>
+                                        <td className="p-2 text-right font-medium text-gray-800">{formatNumber(log.after_qty)}</td>
+                                        <td className="p-2 pl-4 text-gray-600">{log.reason || '-'}</td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
                             </div>
-                          )
-                        ) : null}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {getWarehouseName(item.warehouse_id)}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {mapping?.item_no || '-'}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {mapping?.single_no || '-'}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {mapping?.model_name || '-'}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {mapping ? `${String(mapping.color_code).padStart(2, '0')} ${mapping.color_name || ''}` : '-'}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {mapping?.size_code || '-'}
-                      </td>
-
-                      <td className="p-3 text-center font-medium">
-                        {item.sku}
-                      </td>
-
-                      <td className="p-3 text-center font-bold">
-                        {formatNumber(item.qty)}
-                      </td>
-
-                      <td className="p-3 text-center">
-                        {item.work_date || item.updated_at?.slice(0, 10) || '-'}
-                      </td>
-
-                      <td className="p-3 text-left">
-                        {item.note || '-'}
-                      </td>
-
-                      <td className="p-3">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => fetchInventoryLogs(item.sku)}
-                          >
-                            로그
-                          </Button>
-
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleEditInventory(item)}
-                          >
-                            수정
-                          </Button>
-
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDeleteInventory(item)}
-                          >
-                            삭제
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })
               )}
@@ -1036,114 +1131,6 @@ export function InventoryManager() {
           </table>
         </div>
       </section>
-
-    {selectedLogSku && (
-      <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">
-            재고 변경 로그 - {selectedLogSku}
-          </h2>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSelectedLogSku('')
-              setInventoryLogs([])
-            }}
-          >
-            닫기
-          </Button>
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-gray-50 text-left">
-                <th className="p-3">일자</th>
-                <th className="p-3">구분</th>
-                <th className="p-3 text-right">변경수량</th>
-                <th className="p-3 text-right">변경 전</th>
-                <th className="p-3 text-right">변경 후</th>
-                <th className="p-3">사유</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {inventoryLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-6 text-center text-gray-500">
-                    로그가 없습니다.
-                  </td>
-                </tr>
-              ) : (
-                inventoryLogs.map((log) => (
-                  <tr key={log.id} className="border-b">
-                    <td className="p-3">
-                      {log.work_date || log.created_at?.slice(0, 10) || '-'}
-                    </td>
-                    <td className="p-3">{log.change_type}</td>
-                    <td className="p-3 text-right font-bold">
-                      {formatNumber(log.change_qty)}
-                    </td>
-                    <td className="p-3 text-right">
-                      {formatNumber(log.before_qty)}
-                    </td>
-                    <td className="p-3 text-right">
-                      {formatNumber(log.after_qty)}
-                    </td>
-                    <td className="p-3">{log.reason || '-'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    )}      
     </div>
   )
-    function downloadInventoryExcel() {
-      const rows = filteredInventories.map(
-        (item, index) => ({
-          NO: index + 1,
-
-          창고:
-            warehouses.find(
-              (w) => w.id === item.warehouse_id
-            )?.name || '',
-
-          SKU: item.sku,
-
-          재고수량: item.qty,
-
-          기준일:
-            item.work_date ||
-            item.updated_at?.slice(0, 10) ||
-            '',
-
-          비고: item.note || '',
-        })
-      )
-
-      const worksheet =
-        XLSX.utils.json_to_sheet(rows)
-
-      const workbook =
-        XLSX.utils.book_new()
-
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        '재고목록'
-      )
-
-      const fileName =
-        searchTerm.trim()
-          ? `재고검색결과.xlsx`
-          : `재고목록.xlsx`
-
-      XLSX.writeFile(workbook, fileName)
-    }
 }

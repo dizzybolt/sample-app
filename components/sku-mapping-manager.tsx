@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { batchUpsert,type BulkProgress } from '@/lib/bulk-upload'
 
-const pageSize = 100
+const pageSize = 50
 
 function formatSingleNo(value: string) {
   return value.trim().padStart(4, '0')
@@ -335,6 +335,85 @@ export function SkuMappingManager() {
     XLSX.writeFile(workbook, searchTerm.trim() ? 'SKU매핑_검색결과.xlsx' : 'SKU매핑목록.xlsx')
   }
 
+// 🟢 1,000개 제한 없이 전체 데이터를 받아오는 전체 엑셀 다운로드 함수
+  async function downloadAllExcel() {
+    const ok = window.confirm(
+      '전체 SKU 매핑 데이터를 조회하여 엑셀로 다운로드합니다. 데이터가 많을 경우 시간이 조금 걸릴 수 있습니다. 진행할까요?'
+    )
+    if (!ok) return
+
+    const keyword = searchTerm.trim()
+    const targetItems: any[] = []
+
+    let page = 0
+    const FETCH_LIMIT = 1000 // Supabase 안전 최대 제한폭
+    let hasMore = true
+
+    // 1. 1,000개씩 끊어서 데이터가 없을 때까지 무한 반복 조회를 실행합니다.
+    while (hasMore) {
+      let query = supabase
+        .from('sku_mappings')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .range(page * FETCH_LIMIT, (page + 1) * FETCH_LIMIT - 1) // 🛠️ 1,000개 단위 청크 쪼개기
+
+      if (keyword) {
+        query = query.or(
+          `sku.ilike.%${keyword}%,model_name.ilike.%${keyword}%,item_no.ilike.%${keyword}%,single_no.ilike.%${keyword}%`
+        )
+      }
+
+      const { data: chunkData, error } = await query
+
+      if (error) {
+        alert(`전체 데이터 조회 중 오류 발생 (페이지 ${page + 1})\n\n${error.message}`)
+        return
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        targetItems.push(...chunkData)
+
+        // 가져온 데이터가 1,000개 미만이면 다음 데이터가 없으므로 종료
+        if (chunkData.length < FETCH_LIMIT) {
+          hasMore = false
+        } else {
+          page++ // 다음 1,000개를 조회하기 위해 페이지 증가
+        }
+      } else {
+        hasMore = false
+      }
+    }
+
+    if (targetItems.length === 0) {
+      alert('다운로드할 데이터가 없습니다.')
+      return
+    }
+
+    // 2. 엑셀 파일 행 데이터 구조 매핑
+    const rows = targetItems.map((item, index) => ({
+      NO: index + 1,
+      품번번호: item.item_no,
+      단품번호: item.single_no,
+      SKU: item.sku,
+      모델명: item.model_name,
+      색상코드: item.color_code,
+      색상명: item.color_name || '',
+      사이즈코드: item.size_code,
+      메모: item.memo || '',
+    }))
+
+    // 3. 엑셀 파일 생성 및 다운로드
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '전체매핑목록')
+
+    const fileName = keyword
+      ? `전체SKU매핑검색결과_${new Date().toISOString().slice(0, 10)}.xlsx`
+      : `전체SKU매핑목록_${new Date().toISOString().slice(0, 10)}.xlsx`
+
+    XLSX.writeFile(workbook, fileName)
+  }  
+
   const totalPage = useMemo(
     () => Math.max(1, Math.ceil(totalCount / pageSize)),
     [totalCount]
@@ -493,6 +572,15 @@ export function SkuMappingManager() {
               }}
             >
               검색
+            </Button>
+
+          <Button
+              type="button"
+              variant="outline"
+              className="bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200"
+              onClick={downloadAllExcel}
+            >
+              전체 엑셀
             </Button>
 
             <Button type="button" variant="outline" onClick={downloadExcel}>
