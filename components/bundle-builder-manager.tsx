@@ -336,12 +336,25 @@ async function loadModelRows(groupId: string) {
 
       // 2. 색상코드 숫자 기준 정렬 (02 -> 03 -> 06 -> 11 -> 15 순서 보장)
       allCombinations.sort((a, b) => {
+        // 1. 첫 번째 상품 색상코드 비교
         const codeA1 = Number(a.first.colorCode);
         const codeB1 = Number(b.first.colorCode);
         if (codeA1 !== codeB1) return codeA1 - codeB1;
+
+        // 2. 첫 번째 상품 사이즈 비교
+        const sizeA1 = Number(a.first.size);
+        const sizeB1 = Number(b.first.size);
+        if (sizeA1 !== sizeB1) return sizeA1 - sizeB1;
+
+        // 3. 두 번째 상품 색상코드 비교
         const codeA2 = Number(a.second.colorCode);
         const codeB2 = Number(b.second.colorCode);
-        return codeA2 - codeB2;
+        if (codeA2 !== codeB2) return codeA2 - codeB2;
+
+        // 4. 두 번째 상품 사이즈 비교
+        const sizeA2 = Number(a.second.size);
+        const sizeB2 = Number(b.second.size);
+        return sizeA2 - sizeB2;
       });
 
       // 3. 가중치 정밀 조정 루프 (최종 재고가 0이 되는 조합의 가중치를 분모에서 제외)
@@ -455,6 +468,27 @@ async function loadModelRows(groupId: string) {
         keys: matchedRows.map((row) => `${row.itemNo.trim()}_${row.singleNo.trim()}`)
       }
     })
+   
+    // [수정: 여기에 정렬 로직 추가]
+    allSetCombinations.sort((a, b) => {
+      for (let i = 0; i < activeGroups.length; i++) {
+        // 1. 색상코드 비교 (숫자 변환으로 02 < 11 보장)
+        const colorA = Number(a.matchedRows[i].colorCode);
+        const colorB = Number(b.matchedRows[i].colorCode);
+        if (colorA !== colorB) return colorA - colorB;
+
+        // 2. 색상이 같다면 사이즈 비교
+        const sizeA = Number(a.matchedRows[i].size);
+        const sizeB = Number(b.matchedRows[i].size);
+        
+        // 사이즈가 숫자가 아닌 경우(예: 'FREE')를 대비해 NaN 처리
+        const valA = isNaN(sizeA) ? 999 : sizeA;
+        const valB = isNaN(sizeB) ? 999 : sizeB;
+        
+        if (valA !== valB) return valA - valB;
+      }
+      return 0;
+    });
 
     const setPartnerSumMap = new Map<string, number>()
     allSetCombinations.forEach((comb) => {
