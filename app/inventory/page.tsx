@@ -1,4 +1,5 @@
 import { InventoryManager } from '@/components/inventory-manager'
+import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
 export default function InventoryPage() {
   return (
@@ -11,6 +12,7 @@ export default function InventoryPage() {
             창고별 SKU 재고를 등록하고 수량 변경 이력을 관리합니다.
             </p>
           </div>
+          <OpsDataFreshness />
         </section>
         <section>
           <InventoryManager />

@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
+import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString('ko-KR')
