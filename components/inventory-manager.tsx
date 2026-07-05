@@ -14,7 +14,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
-import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString('ko-KR')
@@ -54,6 +53,7 @@ export function InventoryManager() {
 
   const [skuMappings, setSkuMappings] = useState<SkuMapping[]>([])
   const [productImages, setProductImages] = useState<ProductImage[]>([])
+  const [opsStocks, setOpsStocks] = useState<any[]>([])
 
   useEffect(() => {
     fetchWarehouses()
@@ -106,6 +106,7 @@ export function InventoryManager() {
     setTotalCount(inventoryRes.count || 0)
 
     await fetchInventoryRelations(nextInventories)
+    await fetchOpsStocks()
   }
 
   async function fetchWarehouses() {
@@ -168,6 +169,20 @@ export function InventoryManager() {
     setTotalCount(count || 0)
 
     await fetchInventoryRelations(nextInventories)
+  }
+
+  async function fetchOpsStocks() {
+    const { data, error } = await supabase
+      .from('ops_stock_snapshot')
+      .select('sku, qty, snapshot_date')
+
+    if (error) {
+      console.error(error)
+      setOpsStocks([])
+      return
+    }
+
+    setOpsStocks(data || [])
   }
 
   async function fetchInventoryRelations(items: Inventory[]) {
@@ -255,6 +270,14 @@ export function InventoryManager() {
       (item) =>
         normalizeSku(item.sku) === normalizedSku
     )
+  }
+
+  function getOpsStockQty(sku: string) {
+    const normalizedSku = normalizeSku(sku)
+
+    return opsStocks
+      .filter((item) => normalizeSku(item.sku) === normalizedSku)
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0)
   }
 
   function getProductImage(modelName?: string | null) {
@@ -892,6 +915,7 @@ export function InventoryManager() {
                 <th className="p-3 text-center">사이즈</th>
                 <th className="p-3 text-center font-semibold">SKU</th>
                 <th className="p-3 text-center font-semibold">현재고</th>
+                <th className="p-3 text-center font-semibold">OPS재고</th>
                 <th className="p-3 text-center">최근수정일</th>
                 <th className="p-3 text-left">비고</th>
                 <th className="p-3 text-right">관리</th>
@@ -901,7 +925,7 @@ export function InventoryManager() {
             <tbody>
               {filteredInventories.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="p-6 text-center text-gray-500">
+                  <td colSpan={14} className="p-6 text-center text-gray-500">
                     등록된 재고가 없습니다.
                   </td>
                 </tr>
@@ -987,6 +1011,10 @@ export function InventoryManager() {
                           )}
                         </td>
 
+                        <td className="p-3 text-center font-bold text-gray-700">
+                          {formatNumber(getOpsStockQty(item.sku))}
+                        </td>
+
                         <td className="p-3 text-center">
                           {item.work_date || item.updated_at?.slice(0, 10) || '-'}
                         </td>
@@ -1064,7 +1092,7 @@ export function InventoryManager() {
 
                       {isLogOpen && (
                         <tr className="bg-gray-50/70 border-b">
-                          <td colSpan={13} className="p-4 bg-gray-50/50">
+                          <td colSpan={14} className="p-4 bg-gray-50/50">
                             <div className="rounded-xl border bg-white p-4 shadow-inner max-w-4xl mx-auto">
                               <div className="flex items-center justify-between border-b pb-2 mb-3">
                                 <span className="font-semibold text-gray-800 text-xs">
@@ -1135,3 +1163,6 @@ export function InventoryManager() {
     </div>
   )
 }
+
+console.log('APP SKU:', item.sku)
+console.log('OPS MATCH:', opsStocks.filter((x) => normalizeSku(x.sku) === normalizeSku(item.sku)))
