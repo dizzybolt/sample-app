@@ -31,10 +31,12 @@ import {
   Grid2x2Plus,
   Images,
   LayoutList,
+  TrendingUp,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { tr } from 'date-fns/locale'
 
 const menuSections = [
   {
@@ -65,6 +67,13 @@ const menuSections = [
       { title: '재고관리', href: '/inventory', icon: Boxes },
       { title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck },
       { title: '창고관리', href: '/warehouses', icon: Warehouse },
+    ],
+  },
+  {
+    key: 'sales',
+    title: '판매관리',
+    items: [
+      { title: '출고통계', href: '/sales-stats', icon: TrendingUp },
     ],
   },
   {
