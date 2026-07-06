@@ -2,27 +2,73 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchOpsSalesRows,
-  filterSalesFromDays,
+  calcAverageOrderAmount,
+  calcGrowthRate,
+  fetchOpsSalesRowsByRange,
+  getPeriodRange,
+  getPreviousPeriodRange,
+  groupSalesByDate,
   groupSalesByModel,
   groupSalesByShop,
   groupSalesBySku,
   sumSalesAmount,
   sumSalesQty,
   type OpsSalesRow,
+  type SalesPeriodType,
 } from '@/lib/ops/sales'
-import { formatNumber } from '@/lib/format'
+
+function formatNumber(value: number) {
+  return Number(value || 0).toLocaleString('ko-KR')
+}
+
+function formatPercent(value: number) {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(1)}%`
+}
+
+type SortKey = 'qty' | 'amount' | 'avg'
 
 export function SalesStatsManager() {
+  const defaultRange = getPeriodRange('week')
+
+  const [periodType, setPeriodType] = useState<SalesPeriodType>('week')
+  const [startDate, setStartDate] = useState(defaultRange.startDate)
+  const [endDate, setEndDate] = useState(defaultRange.endDate)
+  const [keyword, setKeyword] = useState('')
+  const [shop, setShop] = useState('ALL')
+
   const [rows, setRows] = useState<OpsSalesRow[]>([])
+  const [prevRows, setPrevRows] = useState<OpsSalesRow[]>([])
   const [loading, setLoading] = useState(false)
+
+  const [dateSortKey, setDateSortKey] = useState<SortKey>('qty')
+  const [shopSortKey, setShopSortKey] = useState<SortKey>('qty')
+  const [modelSortKey, setModelSortKey] = useState<SortKey>('qty')
+  const [skuSortKey, setSkuSortKey] = useState<SortKey>('qty')
 
   async function loadData() {
     setLoading(true)
 
     try {
-      const data = await fetchOpsSalesRows(30)
-      setRows(data)
+      const previousRange = getPreviousPeriodRange(startDate, endDate)
+
+      const [currentData, previousData] = await Promise.all([
+        fetchOpsSalesRowsByRange({
+          startDate,
+          endDate,
+          keyword,
+          shop,
+        }),
+        fetchOpsSalesRowsByRange({
+          startDate: previousRange.startDate,
+          endDate: previousRange.endDate,
+          keyword,
+          shop,
+        }),
+      ])
+
+      setRows(currentData)
+      setPrevRows(previousData)
     } catch (error: any) {
       alert(`출고통계 조회 실패\n\n${error.message}`)
     } finally {
@@ -32,81 +78,259 @@ export function SalesStatsManager() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const last7Rows = useMemo(() => filterSalesFromDays(rows, 7), [rows])
-  const last30Rows = useMemo(() => filterSalesFromDays(rows, 30), [rows])
+  function applyPeriod(type: SalesPeriodType) {
+    const range = getPeriodRange(type)
+
+    setPeriodType(type)
+    setStartDate(range.startDate)
+    setEndDate(range.endDate)
+  }
+
+  function sortSummaryRows<T extends { qty: number; amount: number }>(
+    rows: T[],
+    sortKey: SortKey
+  ) {
+    return [...rows].sort((a, b) => {
+      if (sortKey === 'amount') {
+        return Number(b.amount || 0) - Number(a.amount || 0)
+      }
+
+      if (sortKey === 'avg') {
+        const avgA = Number(a.amount || 0) / Math.max(Number(a.qty || 0), 1)
+        const avgB = Number(b.amount || 0) / Math.max(Number(b.qty || 0), 1)
+
+        return avgB - avgA
+      }
+
+      return Number(b.qty || 0) - Number(a.qty || 0)
+    })
+  }
+
+  const currentQty = sumSalesQty(rows)
+  const currentAmount = sumSalesAmount(rows)
+  const currentAvg = calcAverageOrderAmount(rows)
+
+  const prevQty = sumSalesQty(prevRows)
+  const prevAmount = sumSalesAmount(prevRows)
+  const prevAvg = calcAverageOrderAmount(prevRows)
+
+  const qtyGrowth = calcGrowthRate(currentQty, prevQty)
+  const amountGrowth = calcGrowthRate(currentAmount, prevAmount)
+  const avgGrowth = calcGrowthRate(currentAvg, prevAvg)
+
+  const dateRows = useMemo(
+    () => sortSummaryRows(groupSalesByDate(rows), dateSortKey),
+    [rows, dateSortKey]
+  )
+
+  const shopRows = useMemo(
+    () => sortSummaryRows(groupSalesByShop(rows), shopSortKey),
+    [rows, shopSortKey]
+  )
 
   const modelTop = useMemo(
-    () => groupSalesByModel(last30Rows).slice(0, 20),
-    [last30Rows]
+    () => sortSummaryRows(groupSalesByModel(rows), modelSortKey).slice(0, 20),
+    [rows, modelSortKey]
   )
 
   const skuTop = useMemo(
-    () => groupSalesBySku(last30Rows).slice(0, 20),
-    [last30Rows]
-  )
-
-  const shopSummary = useMemo(
-    () => groupSalesByShop(last30Rows),
-    [last30Rows]
+    () => sortSummaryRows(groupSalesBySku(rows), skuSortKey).slice(0, 20),
+    [rows, skuSortKey]
   )
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-4">
-        <StatCard title="최근 7일 출고수량" value={`${formatNumber(sumSalesQty(last7Rows))}개`} />
-        <StatCard title="최근 30일 출고수량" value={`${formatNumber(sumSalesQty(last30Rows))}개`} />
-        <StatCard title="최근 30일 출고금액" value={`${formatNumber(sumSalesAmount(last30Rows))}원`} />
-        <StatCard title="조회 데이터" value={`${formatNumber(rows.length)}행`} />
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900">조회 조건</h2>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-6">
+          <div>
+            <label className="text-xs text-gray-500">기간</label>
+            <select
+              value={periodType}
+              onChange={(e) => applyPeriod(e.target.value as SalesPeriodType)}
+              className="mt-1 h-10 w-full rounded-md border px-3 text-sm"
+            >
+              <option value="week">이번주</option>
+              <option value="month">이번달</option>
+              <option value="quarter">이번분기</option>
+              <option value="year">올해</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500">시작일</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="mt-1 h-10 w-full rounded-md border px-3 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500">종료일</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="mt-1 h-10 w-full rounded-md border px-3 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500">쇼핑몰</label>
+            <input
+              value={shop === 'ALL' ? '' : shop}
+              onChange={(e) => setShop(e.target.value.trim() || 'ALL')}
+              placeholder="전체"
+              className="mt-1 h-10 w-full rounded-md border px-3 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500">SKU / 모델명</label>
+            <input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="A40..."
+              className="mt-1 h-10 w-full rounded-md border px-3 text-sm"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+              className="h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {loading ? '조회 중...' : '조회'}
+            </button>
+          </div>
+        </div>
+
+        <p className="mt-3 text-xs text-gray-500">
+          조회 기준: {startDate} ~ {endDate}
+        </p>
       </section>
 
-      {loading && (
-        <div className="rounded-2xl border bg-white p-5 text-sm text-gray-500">
-          출고통계 불러오는 중...
-        </div>
-      )}
+      <section className="grid gap-4 md:grid-cols-4">
+        <StatCard
+          title="주문수량"
+          value={`${formatNumber(currentQty)}개`}
+          sub={`이전기간 대비 ${formatPercent(qtyGrowth)}`}
+          growth={qtyGrowth}
+        />
+
+        <StatCard
+          title="주문금액"
+          value={`${formatNumber(currentAmount)}원`}
+          sub={`이전기간 대비 ${formatPercent(amountGrowth)}`}
+          growth={amountGrowth}
+        />
+
+        <StatCard
+          title="평균 주문금액"
+          value={`${formatNumber(Math.round(currentAvg))}원`}
+          sub={`이전기간 대비 ${formatPercent(avgGrowth)}`}
+          growth={avgGrowth}
+        />
+
+        <StatCard
+          title="조회 데이터"
+          value={`${formatNumber(rows.length)}행`}
+          sub="조건에 맞는 원본 출고 행"
+        />
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <SummaryTable
+          title="일자별 출고"
+          sortKey={dateSortKey}
+          onSortKeyChange={setDateSortKey}
+          headers={['일자', '수량', '금액', '평균 판매가']}
+          rows={dateRows.map((item) => [
+            item.date,
+            formatNumber(item.qty),
+            formatNumber(item.amount),
+            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
+          ])}
+        />
+
+        <SummaryTable
+          title="쇼핑몰별 출고"
+          sortKey={shopSortKey}
+          onSortKeyChange={setShopSortKey}          
+          headers={['쇼핑몰', '수량', '금액', '평균 판매가']}
+          rows={shopRows.map((item) => [
+            item.shop,
+            formatNumber(item.qty),
+            formatNumber(item.amount),
+            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
+          ])}
+        />
+      </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
         <SummaryTable
           title="모델별 TOP 20"
-          headers={['모델명', '수량', '금액']}
+          sortKey={modelSortKey}
+          onSortKeyChange={setModelSortKey}
+          headers={['모델명', '수량', '금액', '평균 판매가']}
           rows={modelTop.map((item) => [
             item.model,
             formatNumber(item.qty),
             formatNumber(item.amount),
+            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
           ])}
         />
 
         <SummaryTable
           title="SKU별 TOP 20"
-          headers={['SKU', '수량', '금액']}
+          sortKey={skuSortKey}
+          onSortKeyChange={setSkuSortKey}
+          headers={['SKU', '수량', '금액', '평균 판매가']}
           rows={skuTop.map((item) => [
             item.sku,
             formatNumber(item.qty),
             formatNumber(item.amount),
+            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
           ])}
         />
       </section>
-
-      <SummaryTable
-        title="쇼핑몰별 출고"
-        headers={['쇼핑몰', '수량', '금액']}
-        rows={shopSummary.map((item) => [
-          item.shop,
-          formatNumber(item.qty),
-          formatNumber(item.amount),
-        ])}
-      />
     </div>
   )
 }
 
-function StatCard({ title, value }: { title: string; value: string }) {
+function StatCard({
+  title,
+  value,
+  sub,
+  growth,
+}: {
+  title: string
+  value: string
+  sub?: string
+  growth?: number
+}) {
+  const growthClass =
+    growth === undefined
+      ? 'text-gray-500'
+      : growth > 0
+        ? 'text-blue-600'
+        : growth < 0
+          ? 'text-red-600'
+          : 'text-gray-500'
+
   return (
     <div className="rounded-2xl border bg-white p-5 shadow-sm">
       <p className="text-sm text-gray-500">{title}</p>
       <p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
+      {sub && <p className={`mt-2 text-xs ${growthClass}`}>{sub}</p>}
     </div>
   )
 }
@@ -115,18 +339,34 @@ function SummaryTable({
   title,
   headers,
   rows,
+  sortKey,
+  onSortKeyChange,
 }: {
   title: string
   headers: string[]
   rows: string[][]
+  sortKey: SortKey
+  onSortKeyChange: (key: SortKey) => void
+
 }) {
   return (
     <section className="rounded-2xl border bg-white p-5 shadow-sm">
-      <h2 className="font-semibold text-gray-900">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-semibold text-gray-900">{title}</h2>
 
-      <div className="mt-4 overflow-x-auto">
+        <select
+          value={sortKey}
+          onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
+          className="h-8 rounded-md border px-2 text-xs"
+        >
+          <option value="qty">수량순</option>
+          <option value="amount">금액순</option>
+          <option value="avg">객단가순</option>
+        </select>
+      </div>
+      <div className="mt-4 max-h-[520px] overflow-auto">
         <table className="w-full border-collapse text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b bg-gray-50">
               {headers.map((header, index) => (
                 <th

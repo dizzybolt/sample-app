@@ -19,53 +19,63 @@ export type SalesSearchParams = {
   shop?: string
 }
 
-export async function fetchOpsSalesRows(days = 30) {
-  const supabase = createClient()
+export type SalesPeriodType = 'week' | 'month' | 'quarter' | 'year'
 
-  const fromDate = new Date()
-  fromDate.setDate(fromDate.getDate() - days)
+const PAGE_SIZE = 1000
 
-  const from = fromDate.toISOString().slice(0, 10)
+export function toDateString(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
 
-  const { data, error } = await supabase
-    .from('ops_sales_daily_all')
-    .select('*')
-    .gte('order_date', from)
-
-  if (error) throw error
-
-  return (data || []) as OpsSalesRow[]
+  return `${year}-${month}-${day}`
 }
 
-export async function fetchOpsSalesRowsByRange(params: SalesSearchParams) {
-  const supabase = createClient()
+export function getPeriodRange(type: SalesPeriodType, baseDate = new Date()) {
+  const date = new Date(baseDate)
+  const year = date.getFullYear()
+  const month = date.getMonth()
 
-  let query = supabase
-    .from('ops_sales_daily_all')
-    .select('*')
-    .gte('order_date', params.startDate)
-    .lte('order_date', params.endDate)
+  if (type === 'week') {
+    const day = date.getDay()
+    const diffToMonday = day === 0 ? -6 : 1 - day
 
-  if (params.shop && params.shop !== 'ALL') {
-    query = query.eq('shop', params.shop)
+    const start = new Date(date)
+    start.setDate(date.getDate() + diffToMonday)
+
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6)
+
+    return {
+      label: '이번주',
+      startDate: toDateString(start),
+      endDate: toDateString(end),
+    }
   }
 
-  const { data, error } = await query
+  if (type === 'month') {
+    return {
+      label: '이번달',
+      startDate: toDateString(new Date(year, month, 1)),
+      endDate: toDateString(new Date(year, month + 1, 0)),
+    }
+  }
 
-  if (error) throw error
+  if (type === 'quarter') {
+    const quarterStartMonth = Math.floor(month / 3) * 3
 
-  const keyword = (params.keyword || '').trim().toUpperCase()
+    return {
+      label: '이번분기',
+      startDate: toDateString(new Date(year, quarterStartMonth, 1)),
+      endDate: toDateString(new Date(year, quarterStartMonth + 3, 0)),
+    }
+  }
 
-  const rows = ((data || []) as OpsSalesRow[]).filter((row) => {
-    if (!keyword) return true
-
-    const sku = row.sku?.toUpperCase() || ''
-    const model = sku.split('_')[0] || ''
-
-    return sku.includes(keyword) || model.includes(keyword)
-  })
-
-  return rows
+  return {
+    label: '올해',
+    startDate: toDateString(new Date(year, 0, 1)),
+    endDate: toDateString(new Date(year, 11, 31)),
+  }
 }
 
 export function getPreviousMonthRange(startDate: string, endDate: string) {
@@ -76,17 +86,79 @@ export function getPreviousMonthRange(startDate: string, endDate: string) {
   end.setMonth(end.getMonth() - 1)
 
   return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
+    startDate: toDateString(start),
+    endDate: toDateString(end),
   }
 }
 
-export function calcGrowthRate(current: number, previous: number) {
-  if (previous === 0) {
-    return current === 0 ? 0 : 100
+export function getPreviousPeriodRange(startDate: string, endDate: string) {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+
+  const diffDays =
+    Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+
+  const prevEnd = new Date(start)
+  prevEnd.setDate(start.getDate() - 1)
+
+  const prevStart = new Date(prevEnd)
+  prevStart.setDate(prevEnd.getDate() - diffDays + 1)
+
+  return {
+    startDate: toDateString(prevStart),
+    endDate: toDateString(prevEnd),
+  }
+}
+
+export async function fetchOpsSalesRowsByRange(params: SalesSearchParams) {
+  const supabase = createClient()
+
+  const allRows: OpsSalesRow[] = []
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let query = supabase
+      .from('ops_sales_daily_all')
+      .select('*')
+      .gte('order_date', params.startDate)
+      .lte('order_date', params.endDate)
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (params.shop && params.shop !== 'ALL') {
+      query = query.eq('shop', params.shop)
+    }
+
+    const { data, error } = await query
+
+    if (error) throw error
+
+    if (!data || data.length === 0) break
+
+    allRows.push(...((data || []) as OpsSalesRow[]))
+
+    if (data.length < PAGE_SIZE) break
   }
 
-  return ((current - previous) / previous) * 100
+  const keyword = (params.keyword || '').trim().toUpperCase()
+
+  if (!keyword) return allRows
+
+  return allRows.filter((row) => {
+    const sku = row.sku?.toUpperCase() || ''
+    const model = sku.split('_')[0] || ''
+
+    return sku.includes(keyword) || model.includes(keyword)
+  })
+}
+
+export async function fetchOpsSalesRows(days = 30) {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(end.getDate() - days)
+
+  return fetchOpsSalesRowsByRange({
+    startDate: toDateString(start),
+    endDate: toDateString(end),
+  })
 }
 
 export function sumSalesQty(rows: OpsSalesRow[]) {
@@ -97,13 +169,21 @@ export function sumSalesAmount(rows: OpsSalesRow[]) {
   return rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
 }
 
-export function filterSalesFromDays(rows: OpsSalesRow[], days: number) {
-  const fromDate = new Date()
-  fromDate.setDate(fromDate.getDate() - days)
+export function calcAverageOrderAmount(rows: OpsSalesRow[]) {
+  const qty = sumSalesQty(rows)
+  const amount = sumSalesAmount(rows)
 
-  const from = fromDate.toISOString().slice(0, 10)
+  if (qty === 0) return 0
 
-  return rows.filter((row) => row.order_date >= from)
+  return amount / qty
+}
+
+export function calcGrowthRate(current: number, previous: number) {
+  if (previous === 0) {
+    return current === 0 ? 0 : 100
+  }
+
+  return ((current - previous) / previous) * 100
 }
 
 export function groupSalesByDate(rows: OpsSalesRow[]) {
@@ -119,7 +199,7 @@ export function groupSalesByDate(rows: OpsSalesRow[]) {
     map.set(date, prev)
   })
 
-  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
+  return Array.from(map.values()).sort((a, b) => b.qty - a.qty)
 }
 
 export function groupSalesByModel(rows: OpsSalesRow[]) {
