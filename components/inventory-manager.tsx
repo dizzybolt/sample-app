@@ -169,12 +169,18 @@ export function InventoryManager() {
     setTotalCount(count || 0)
 
     await fetchInventoryRelations(nextInventories)
+    await fetchOpsStocks()
   }
 
   async function fetchOpsStocks() {
+  const allRows: any[] = []
+  const chunkSize = 1000
+
+  for (let from = 0; ; from += chunkSize) {
     const { data, error } = await supabase
       .from('ops_stock_snapshot')
-      .select('sku, qty, snapshot_date')
+      .select('sku, qty, snapshot_date, warehouse')
+      .range(from, from + chunkSize - 1)
 
     if (error) {
       console.error(error)
@@ -182,8 +188,15 @@ export function InventoryManager() {
       return
     }
 
-    setOpsStocks(data || [])
+    if (!data || data.length === 0) break
+
+    allRows.push(...data)
+
+    if (data.length < chunkSize) break
   }
+
+  setOpsStocks(allRows)
+}
 
   async function fetchInventoryRelations(items: Inventory[]) {
     const skus = items.map((item) => item.sku).filter(Boolean)
@@ -882,6 +895,10 @@ export function InventoryManager() {
               검색
             </Button>
 
+            <div className="text-xs text-gray-500">
+              OPS 재고 로드: {opsStocks.length.toLocaleString()}건
+            </div>
+
             <Button
               type="button"
               variant="outline"
@@ -1163,6 +1180,3 @@ export function InventoryManager() {
     </div>
   )
 }
-
-console.log('APP SKU:', item.sku)
-console.log('OPS MATCH:', opsStocks.filter((x) => normalizeSku(x.sku) === normalizeSku(item.sku)))
