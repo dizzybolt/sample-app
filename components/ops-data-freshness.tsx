@@ -22,10 +22,12 @@ function formatDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) return '-'
 
   return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'UTC',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   }).format(date)
 }
 
