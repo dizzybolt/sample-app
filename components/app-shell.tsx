@@ -65,7 +65,7 @@ const menuSections = [
     title: '재고관리',
     items: [
       { title: '재고관리', href: '/inventory', icon: Boxes },
-      { title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck },
+      //{ title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck },
       { title: '창고관리', href: '/warehouses', icon: Warehouse },
     ],
   },
@@ -74,6 +74,7 @@ const menuSections = [
     title: '판매관리',
     items: [
       { title: '출고통계', href: '/sales-stats', icon: TrendingUp },
+      { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck },      
     ],
   },
   {

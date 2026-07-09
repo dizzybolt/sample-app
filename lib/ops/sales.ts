@@ -12,6 +12,12 @@ export type OpsSalesRow = {
   source: string | null
 }
 
+export type RocketSkuPriceRow = {
+  sku: string
+  model_name: string | null
+  rocket_supply_price: number | null
+}
+
 export type SalesSearchParams = {
   startDate: string
   endDate: string
@@ -121,6 +127,8 @@ export async function fetchOpsSalesRowsByRange(params: SalesSearchParams) {
       .select('*')
       .gte('order_date', params.startDate)
       .lte('order_date', params.endDate)
+      .order('order_date', { ascending: true })
+      .order('id', { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
 
     if (params.shop && params.shop !== 'ALL') {
@@ -252,4 +260,56 @@ export function groupSalesByShop(rows: OpsSalesRow[]) {
 
 export function getUniqueShops(rows: OpsSalesRow[]) {
   return Array.from(new Set(rows.map((row) => row.shop || '-'))).sort()
+}
+
+export function applyRocketSupplyAmount(
+  rows: OpsSalesRow[],
+  rocketPrices: RocketSkuPriceRow[]
+) {
+  const skuPriceMap = new Map(
+    rocketPrices.map((item) => [
+      String(item.sku || '').trim().toUpperCase(),
+      Number(item.rocket_supply_price || 0),
+    ])
+  )
+
+  const modelPriceMap = new Map(
+    rocketPrices.map((item) => [
+      String(item.model_name || '').trim().toUpperCase(),
+      Number(item.rocket_supply_price || 0),
+    ])
+  )
+
+  let rocketAmount = 0
+  let rocketCount = 0
+
+  const nextRows = rows.map((row) => {
+    const originalAmount = Number(row.amount || 0)
+    const shop = String(row.shop || '').trim()
+
+    if (shop !== '쿠팡로켓') return row
+    if (originalAmount !== 0) return row
+
+    const sku = String(row.sku || '').trim().toUpperCase()
+    const model = sku.split('_')[0]
+    const price = skuPriceMap.get(sku) || modelPriceMap.get(model) || 0
+
+    if (price <= 0) return row
+
+    const adjustedAmount = price * Number(row.qty || 0)
+
+    rocketAmount += adjustedAmount
+    rocketCount += 1
+
+    return {
+      ...row,
+      amount: adjustedAmount,
+    }
+  })
+
+  return {
+    rows: nextRows,
+    rocketAmount,
+    rocketCount,
+  }
 }

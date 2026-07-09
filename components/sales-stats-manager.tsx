@@ -15,7 +15,12 @@ import {
   sumSalesQty,
   type OpsSalesRow,
   type SalesPeriodType,
+  applyRocketSupplyAmount,
+  type RocketSkuPriceRow,
 } from '@/lib/ops/sales'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
 
 function formatNumber(value: number) {
   return Number(value || 0).toLocaleString('ko-KR')
@@ -46,13 +51,16 @@ export function SalesStatsManager() {
   const [modelSortKey, setModelSortKey] = useState<SortKey>('qty')
   const [skuSortKey, setSkuSortKey] = useState<SortKey>('qty')
 
+  const [rocketAmount, setRocketAmount] = useState(0)
+  const [rocketCount, setRocketCount] = useState(0)  
+
   async function loadData() {
     setLoading(true)
 
     try {
       const previousRange = getPreviousPeriodRange(startDate, endDate)
 
-      const [currentData, previousData] = await Promise.all([
+      const [currentData, previousData, rocketRes] = await Promise.all([
         fetchOpsSalesRowsByRange({
           startDate,
           endDate,
@@ -65,10 +73,20 @@ export function SalesStatsManager() {
           keyword,
           shop,
         }),
+        supabase
+          .from('rocket_sku_prices')
+          .select('sku, model_name, rocket_supply_price'),
       ])
 
-      setRows(currentData)
-      setPrevRows(previousData)
+        const rocketPrices = (rocketRes.data || []) as RocketSkuPriceRow[]
+
+        const currentAdjusted = applyRocketSupplyAmount(currentData, rocketPrices)
+        const previousAdjusted = applyRocketSupplyAmount(previousData, rocketPrices)
+
+        setRows(currentAdjusted.rows)
+        setPrevRows(previousAdjusted.rows)
+        setRocketAmount(currentAdjusted.rocketAmount)
+        setRocketCount(currentAdjusted.rocketCount)
     } catch (error: any) {
       alert(`출고통계 조회 실패\n\n${error.message}`)
     } finally {
@@ -241,9 +259,9 @@ export function SalesStatsManager() {
         />
 
         <StatCard
-          title="조회 데이터"
-          value={`${formatNumber(rows.length)}행`}
-          sub="조건에 맞는 원본 출고 행"
+          title="쿠팡로켓(매입가)"
+          value={`${formatNumber(rocketAmount)}원`}
+          sub={`${formatNumber(rocketCount)}종 매입가 적용`}
         />
       </section>
 

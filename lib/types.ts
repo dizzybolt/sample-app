@@ -344,6 +344,12 @@ export interface ProductMaster {
   source_sample_id?: string | null
   created_at?: string | null
   updated_at?: string | null
+  rocket_supply_price?: number | null
+  safety_stock?: number | null
+  target_stock_days?: number | null
+  product_status?: string | null
+  representative_color?: string | null
+  size_group?: string | null
 }
 
 export interface ProductSku {

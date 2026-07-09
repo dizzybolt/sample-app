@@ -925,15 +925,15 @@ export function InventoryManager() {
                 <th className="p-3 text-center">NO</th>
                 <th className="p-3 text-center">이미지</th>
                 <th className="p-3 text-center">창고</th>
-                <th className="p-3 text-center">품번번호</th>
-                <th className="p-3 text-center">단품번호</th>
+                <th className="p-3 text-center">품번<br/>번호</th>
+                <th className="p-3 text-center">단품<br/>번호</th>
                 <th className="p-3 text-center">모델명</th>
                 <th className="p-3 text-center">색상</th>
                 <th className="p-3 text-center">사이즈</th>
                 <th className="p-3 text-center font-semibold">SKU</th>
-                <th className="p-3 text-center font-semibold">현재고</th>
-                <th className="p-3 text-center font-semibold">OPS재고</th>
-                <th className="p-3 text-center">최근수정일</th>
+                <th className="p-3 text-center font-semibold">현재고<br/>(수기)</th>
+                <th className="p-3 text-center font-semibold">OPS<br/>재고<br/>(ERP)</th>
+                <th className="p-3 text-center">현재고<br/>기준일</th>
                 <th className="p-3 text-left">비고</th>
                 <th className="p-3 text-right">관리</th>
               </tr>

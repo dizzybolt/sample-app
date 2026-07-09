@@ -2,19 +2,24 @@ import Link from 'next/link'
 import {
   BarChart3,
   Barcode,
+  BookOpen,
   Camera,
+  ChevronDown,
   ClipboardList,
   FileCog,
   FileText,
+  Home,
   IdCard,
   ImageIcon,
   Layers3,
+  Menu,
   Package,
   PackageCheck,
   Palette,
   Ruler,
   Settings,
   Shirt,
+  Truck,
   Warehouse,
   Wrench,
   X,
@@ -23,6 +28,7 @@ import {
   Grid2x2Plus,
   Images,
   LayoutList,
+  TrendingUp,
 } from 'lucide-react'
 
 const sections = [
@@ -33,7 +39,7 @@ const sections = [
       { title: '샘플관리', href: '/samples', icon: ClipboardList, desc: '신규 샘플 등록 및 상태 관리' },
       { title: '발주관리', href: '/orders', icon: FileText, desc: '발주서 작성 및 발주수량 관리' },
       { title: '입고관리', href: '/inbound', icon: PackageCheck, desc: '입고 회차별 수량 관리' },
-      { title: '모델명관리', href: '/products', icon: LayoutList, desc: '모델명 등록 및 관리' },
+      { title: '상품 마스터', href: '/products', icon: LayoutList, desc: '상품 기준 등록 및 관리' },
     ],
   },
   {
@@ -45,10 +51,18 @@ const sections = [
     ],
   },
   {
-    title: '물류관리',
+    title: '재고관리',
     items: [
       { title: '재고관리', href: '/inventory', icon: Boxes, desc: '창고별 SKU 재고 관리' },
+      //{ title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck, desc: '재고 등록/수정' },
       { title: '창고관리', href: '/warehouses', icon: Warehouse, desc: '재고 반영 창고 관리' },
+    ],
+  },
+  {
+    title: '판매관리',
+    items: [
+      { title: '주문통계', href: '/sales-stats', icon: TrendingUp, desc: '주문 통계 조회' },
+      { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck, desc: '로켓 SKU 관리' },
     ],
   },
   {
@@ -60,12 +74,16 @@ const sections = [
   {
     title: '설정',
     items: [
-      { title: '모델명 기준 관리', href: '/model-codes', icon: Settings, desc: '브랜드/카테고리/연도/시즌 코드 관리' },
-      { title: '컬러 기준 관리', href: '/color-codes', icon: Palette, desc: '색상 코드 관리' },
-      { title: '사이즈 기준 관리', href: '/size-groups', icon: Ruler, desc: '사이즈 그룹 관리' },
-      { title: '발주/입고 출력 헤더 설정', href: '/print-headers', icon: Grid2x2Plus, desc: '발주서/입고서 헤더 관리' },
+      { title: '모델명 생성 기준 설정', href: '/model-codes', icon: Settings, desc: '브랜드/카테고리/연도/시즌 코드 관리' },
+      { title: '컬러 기준 설정', href: '/color-codes', icon: Palette, desc: '색상 코드 관리' },
+      { title: '사이즈 기준 설정', href: '/size-groups', icon: Ruler, desc: '사이즈 그룹 관리' },
       { title: '스튜디오 관리', href: '/studios', icon: Camera, desc: '촬영 스튜디오 관리' },
+      { title: '발주/입고 출력 헤더 설정', href: '/print-headers', icon: Grid2x2Plus, desc: '발주서/입고서 헤더 관리' },
     ],
+  },
+  {
+    title: '가이드',
+    items: [{ title: '가이드', href: '/guide', icon: BookOpen, desc: '사용 가이드' }],
   },
 ]
 
@@ -83,7 +101,7 @@ export default function HomePage() {
         <section key={section.title} className="space-y-3">
           <h2 className="text-lg font-semibold text-gray-900">{section.title}</h2>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {section.items.map((item) => {
               const Icon = item.icon
 
