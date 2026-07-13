@@ -46,6 +46,7 @@ export function SalesStatsManager() {
   const [endDate, setEndDate] = useState(defaultRange.endDate)
   const [keyword, setKeyword] = useState('')
   const [shop, setShop] = useState('ALL')
+  const [shopOptions, setShopOptions] = useState<string[]>([])
 
   const [rows, setRows] = useState<OpsSalesRow[]>([])
   const [prevRows, setPrevRows] = useState<OpsSalesRow[]>([])
@@ -182,8 +183,44 @@ export function SalesStatsManager() {
     }
   }
 
+  async function fetchShopOptions() {
+    const allShops: string[] = []
+    const pageSize = 1000
+
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('ops_sales_daily_all')
+        .select('shop')
+        .order('shop', { ascending: true })
+        .range(from, from + pageSize - 1)
+
+      if (error) {
+        console.error('쇼핑몰 목록 조회 실패:', error)
+        setShopOptions([])
+        return
+      }
+
+      if (!data || data.length === 0) break
+
+      allShops.push(
+        ...data
+          .map((item) => String(item.shop || '').trim())
+          .filter(Boolean)
+      )
+
+      if (data.length < pageSize) break
+    }
+
+    const uniqueShops = Array.from(new Set(allShops)).sort((a, b) =>
+      a.localeCompare(b, 'ko')
+    )
+
+    setShopOptions(uniqueShops)
+  }
+
   useEffect(() => {
     loadData()
+    fetchShopOptions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -289,12 +326,20 @@ export function SalesStatsManager() {
 
           <div>
             <label className="text-xs text-gray-500">쇼핑몰</label>
-            <input
-              value={shop === 'ALL' ? '' : shop}
-              onChange={(e) => setShop(e.target.value.trim() || 'ALL')}
-              placeholder="전체"
+
+            <select
+              value={shop}
+              onChange={(e) => setShop(e.target.value)}
               className="mt-1 h-10 w-full rounded-md border px-3 text-sm"
-            />
+            >
+              <option value="ALL">전체 쇼핑몰</option>
+
+              {shopOptions.map((shopName) => (
+                <option key={shopName} value={shopName}>
+                  {shopName}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
