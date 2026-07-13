@@ -184,38 +184,19 @@ export function SalesStatsManager() {
   }
 
   async function fetchShopOptions() {
-    const allShops: string[] = []
-    const pageSize = 1000
+    const { data, error } = await supabase.rpc('get_ops_sales_shops')
 
-    for (let from = 0; ; from += pageSize) {
-      const { data, error } = await supabase
-        .from('ops_sales_daily_all')
-        .select('shop')
-        .order('shop', { ascending: true })
-        .range(from, from + pageSize - 1)
-
-      if (error) {
-        console.error('쇼핑몰 목록 조회 실패:', error)
-        setShopOptions([])
-        return
-      }
-
-      if (!data || data.length === 0) break
-
-      allShops.push(
-        ...data
-          .map((item) => String(item.shop || '').trim())
-          .filter(Boolean)
-      )
-
-      if (data.length < pageSize) break
+    if (error) {
+      console.error('쇼핑몰 목록 조회 실패:', error)
+      setShopOptions([])
+      return
     }
 
-    const uniqueShops = Array.from(new Set(allShops)).sort((a, b) =>
-      a.localeCompare(b, 'ko')
-    )
+    const options = (data || [])
+      .map((item: { shop: string | null }) => String(item.shop || '').trim())
+      .filter(Boolean)
 
-    setShopOptions(uniqueShops)
+    setShopOptions(options)
   }
 
   useEffect(() => {
