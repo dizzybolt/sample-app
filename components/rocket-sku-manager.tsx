@@ -45,6 +45,8 @@ const emptyForm: RocketSkuForm = {
   note: '',
 }
 
+const PAGE_SIZE = 100
+
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString('ko-KR')
 }
@@ -63,6 +65,9 @@ export function RocketSkuManager() {
 
   const [items, setItems] = useState<RocketSkuPrice[]>([])
   const [images, setImages] = useState<ProductImage[]>([])
+  
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -75,16 +80,39 @@ export function RocketSkuManager() {
   const [form, setForm] = useState<RocketSkuForm>(emptyForm)
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    fetchData(currentPage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage])
 
-  async function fetchData() {
+  async function fetchData(page = currentPage) {
     setIsSaving(true)
 
-    const { data, error } = await supabase
+    const from = (page - 1) * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+
+    let query = supabase
       .from('rocket_sku_prices')
-      .select('*')
-      .order('rocket_sku_id', { ascending: true })
+      .select('*', { count: 'exact' })
+      .order('rocket_sku_id', {
+        ascending: true,
+        nullsFirst: false,
+      })
+      .range(from, to)
+
+    const keyword = searchTerm.trim()
+
+    if (keyword) {
+      query = query.or(
+        [
+          `rocket_sku_id.ilike.%${keyword}%`,
+          `sku.ilike.%${keyword}%`,
+          `model_name.ilike.%${keyword}%`,
+          `note.ilike.%${keyword}%`,
+        ].join(',')
+      )
+    }
+
+    const { data, error, count } = await query
 
     setIsSaving(false)
 
@@ -94,7 +122,9 @@ export function RocketSkuManager() {
     }
 
     const nextItems = (data || []) as RocketSkuPrice[]
+
     setItems(nextItems)
+    setTotalCount(count || 0)
 
     await fetchImages(nextItems)
   }
@@ -202,38 +232,21 @@ export function RocketSkuManager() {
     await fetchData()
   }
 
+  function handleSearch() {
+    if (currentPage === 1) {
+      fetchData(1)
+    } else {
+      setCurrentPage(1)
+    }
+  }
+
   function getImage(modelName?: string | null) {
     if (!modelName) return null
     return images.find((item) => item.model_name === modelName)?.image_url || null
   }
 
-  const filteredItems = useMemo(() => {
-    const keyword = searchTerm.trim().toUpperCase()
+  const filteredItems = items
 
-    const result = items.filter((item) => {
-      if (!keyword) return true
-
-      const sku = item.sku?.toUpperCase() || ''
-      const rocketSkuId = item.rocket_sku_id?.toUpperCase() || ''
-      const model = item.model_name?.toUpperCase() || ''
-      const note = item.note?.toUpperCase() || ''
-
-      return (
-        sku.includes(keyword) ||
-        rocketSkuId.includes(keyword) ||
-        model.includes(keyword) ||
-        note.includes(keyword)
-      )
-    })
-
-    return result.sort((a, b) =>
-      String(a.rocket_sku_id || '').localeCompare(
-        String(b.rocket_sku_id || ''),
-        'ko',
-        { numeric: true }
-      )
-    )
-  }, [items, searchTerm])
 
   function shouldShowModelImage(item: RocketSkuPrice, index: number) {
     const modelName = item.model_name || getModelFromSku(item.sku)
@@ -321,7 +334,8 @@ export function RocketSkuManager() {
       `로켓SKU 업로드 완료\n\n성공 ${result.success.toLocaleString()}건\n실패 ${result.fail.toLocaleString()}건`
     )
 
-    await fetchData()
+    setCurrentPage(1)
+    await fetchData(1)
   }
 
   function downloadExcel() {
@@ -344,6 +358,11 @@ export function RocketSkuManager() {
     XLSX.utils.book_append_sheet(workbook, worksheet, '로켓SKU')
     XLSX.writeFile(workbook, `로켓SKU_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(totalCount / PAGE_SIZE)
+  )
 
   return (
     <div className="space-y-6">
@@ -506,7 +525,7 @@ export function RocketSkuManager() {
           <div>
             <h2 className="font-semibold text-gray-900">로켓SKU 목록</h2>
             <p className="mt-1 text-sm text-gray-500">
-              총 {filteredItems.length.toLocaleString()}건
+              총 {totalCount.toLocaleString()}건
             </p>
           </div>
 
@@ -516,13 +535,26 @@ export function RocketSkuManager() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Rocket SKU ID / SKU / 모델명 검색"
               className="w-80"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch()
+                }
+              }}
             />
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSearch}
+            >
+              검색
+            </Button>
 
             <Button type="button" variant="outline" onClick={downloadExcel}>
               엑셀
             </Button>
 
-            <Button type="button" variant="outline" onClick={fetchData}>
+            <Button type="button" variant="outline" onClick={() => fetchData(currentPage)}>
               새로고침
             </Button>
           </div>
@@ -558,6 +590,8 @@ export function RocketSkuManager() {
                   const modelName = item.model_name || getModelFromSku(item.sku)
                   const imageUrl = getImage(modelName)
                   const showImage = shouldShowModelImage(item, index)
+
+                  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
                   return (
                     <tr key={item.id} className="border-b last:border-0">
@@ -622,6 +656,44 @@ export function RocketSkuManager() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-gray-500">
+            {totalCount === 0
+              ? '0건'
+              : `${((currentPage - 1) * PAGE_SIZE + 1).toLocaleString()}~${Math.min(
+                  currentPage * PAGE_SIZE,
+                  totalCount
+                ).toLocaleString()} / ${totalCount.toLocaleString()}건`}
+          </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={currentPage <= 1 || isSaving}
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+            >
+              이전
+            </Button>
+
+            <span className="min-w-[90px] text-center text-sm">
+              {currentPage} / {totalPages}
+            </span>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages || isSaving}
+              onClick={() =>
+                setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+              }
+            >
+              다음
+            </Button>
+          </div>
         </div>
       </section>
     </div>

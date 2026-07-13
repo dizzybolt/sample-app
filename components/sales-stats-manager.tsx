@@ -23,6 +23,7 @@ import {
   excludeGiftSalesRows,
   type GiftModel,
 } from '@/lib/ops/gifts'
+import { fetchAllRocketSkuPrices } from '@/lib/ops/rocket'
 
 const supabase = createClient()
 
@@ -67,7 +68,7 @@ export function SalesStatsManager() {
       const [
         currentData,
         previousData,
-        rocketRes,
+        rocketPrices,
         giftModelRes,
       ] = await Promise.all([
         fetchOpsSalesRowsByRange({
@@ -84,9 +85,7 @@ export function SalesStatsManager() {
           shop,
         }),
 
-        supabase
-          .from('rocket_sku_prices')
-          .select('sku, model_name, rocket_supply_price'),
+        fetchAllRocketSkuPrices(),
 
         supabase
           .from('ops_gift_models')
@@ -96,16 +95,9 @@ export function SalesStatsManager() {
           .eq('is_active', true),
       ])
 
-      if (rocketRes.error) {
-        throw rocketRes.error
-      }
-
       if (giftModelRes.error) {
         throw giftModelRes.error
       }
-
-      const rocketPrices =
-        (rocketRes.data || []) as RocketSkuPriceRow[]
 
       const giftModels =
         (giftModelRes.data || []) as GiftModel[]
