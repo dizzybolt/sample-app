@@ -32,6 +32,7 @@ import {
   Images,
   LayoutList,
   TrendingUp,
+  Gift,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -74,7 +75,8 @@ const menuSections = [
     title: '판매관리',
     items: [
       { title: '출고통계', href: '/sales-stats', icon: TrendingUp },
-      { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck },      
+      { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck },
+      { title: '사은품 출고내역', href: '/gift-shipments', icon: Gift },
     ],
   },
   {
