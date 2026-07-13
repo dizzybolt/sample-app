@@ -19,6 +19,10 @@ import {
   type RocketSkuPriceRow,
 } from '@/lib/ops/sales'
 import { createClient } from '@/lib/supabase/client'
+import {
+  excludeGiftSalesRows,
+  type GiftModel,
+} from '@/lib/ops/gifts'
 
 const supabase = createClient()
 
@@ -60,35 +64,127 @@ export function SalesStatsManager() {
     try {
       const previousRange = getPreviousPeriodRange(startDate, endDate)
 
-      const [currentData, previousData, rocketRes] = await Promise.all([
+      const [
+        currentData,
+        previousData,
+        rocketRes,
+        giftModelRes,
+      ] = await Promise.all([
         fetchOpsSalesRowsByRange({
           startDate,
           endDate,
           keyword,
           shop,
         }),
+
         fetchOpsSalesRowsByRange({
           startDate: previousRange.startDate,
           endDate: previousRange.endDate,
           keyword,
           shop,
         }),
+
         supabase
           .from('rocket_sku_prices')
           .select('sku, model_name, rocket_supply_price'),
+
+        supabase
+          .from('ops_gift_models')
+          .select(
+            'id, model_name, gift_name, is_active, note, created_at, updated_at'
+          )
+          .eq('is_active', true),
       ])
 
-        const rocketPrices = (rocketRes.data || []) as RocketSkuPriceRow[]
+      if (rocketRes.error) {
+        throw rocketRes.error
+      }
 
-        const currentAdjusted = applyRocketSupplyAmount(currentData, rocketPrices)
-        const previousAdjusted = applyRocketSupplyAmount(previousData, rocketPrices)
+      if (giftModelRes.error) {
+        throw giftModelRes.error
+      }
 
-        setRows(currentAdjusted.rows)
-        setPrevRows(previousAdjusted.rows)
-        setRocketAmount(currentAdjusted.rocketAmount)
-        setRocketCount(currentAdjusted.rocketCount)
+      const rocketPrices =
+        (rocketRes.data || []) as RocketSkuPriceRow[]
+
+      const giftModels =
+        (giftModelRes.data || []) as GiftModel[]
+
+      const currentAdjusted = applyRocketSupplyAmount(
+        currentData,
+        rocketPrices
+      )
+
+      const previousAdjusted = applyRocketSupplyAmount(
+        previousData,
+        rocketPrices
+      )
+
+      const currentSalesRows = excludeGiftSalesRows(
+        currentAdjusted.rows,
+        giftModels
+      )
+
+      const previousSalesRows = excludeGiftSalesRows(
+        previousAdjusted.rows,
+        giftModels
+      )
+
+      setRows(currentSalesRows)
+      setPrevRows(previousSalesRows)
+
+      // 쿠팡로켓 금액은 사은품 제외 후 다시 계산하는 편이 정확함
+      const currentGiftModelSet = new Set(
+        giftModels.map((item) =>
+          item.model_name.trim().toUpperCase()
+        )
+      )
+
+      const filteredRocketRows = currentAdjusted.rows.filter((row) => {
+        const model = String(row.sku || '')
+          .split('_')[0]
+          .trim()
+          .toUpperCase()
+
+        return !currentGiftModelSet.has(model)
+      })
+
+      const rocketOnlyAmount = filteredRocketRows.reduce((sum, row) => {
+        const shopName = String(row.shop || '').trim()
+        const originalRow = currentData.find(
+          (sourceRow) => sourceRow.id === row.id
+        )
+
+        if (
+          shopName !== '쿠팡로켓' ||
+          Number(originalRow?.amount || 0) !== 0
+        ) {
+          return sum
+        }
+
+        return sum + Number(row.amount || 0)
+      }, 0)
+
+      const rocketOnlyCount = filteredRocketRows.reduce((sum, row) => {
+        const shopName = String(row.shop || '').trim()
+        const originalRow = currentData.find(
+          (sourceRow) => sourceRow.id === row.id
+        )
+
+        if (
+          shopName !== '쿠팡로켓' ||
+          Number(originalRow?.amount || 0) !== 0
+        ) {
+          return sum
+        }
+
+        return sum + 1
+      }, 0)
+
+      setRocketAmount(rocketOnlyAmount)
+      setRocketCount(rocketOnlyCount)
     } catch (error: any) {
-      alert(`출고통계 조회 실패\n\n${error.message}`)
+      alert(`주문통계 조회 실패\n\n${error.message}`)
     } finally {
       setLoading(false)
     }
