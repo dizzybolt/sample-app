@@ -7,16 +7,11 @@ import {
   fetchOpsSalesRowsByRange,
   getPeriodRange,
   getPreviousPeriodRange,
-  groupSalesByDate,
-  groupSalesByModel,
-  groupSalesByShop,
-  groupSalesBySku,
   sumSalesAmount,
   sumSalesQty,
   type OpsSalesRow,
   type SalesPeriodType,
   applyRocketSupplyAmount,
-  type RocketSkuPriceRow,
 } from '@/lib/ops/sales'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -24,6 +19,18 @@ import {
   type GiftModel,
 } from '@/lib/ops/gifts'
 import { fetchAllRocketSkuPrices } from '@/lib/ops/rocket'
+import {
+  buildNetSalesSummary,
+  excludeGiftClaimRows,
+  fetchOpsClaimRowsByRange,
+  getCancelRows,
+  getModelFromSku,
+  getReturnRows,
+  sumClaimAmount,
+  sumClaimQty,
+  type NetSalesSummaryRow,
+  type OpsClaimRow,
+} from '@/lib/ops/claims'
 
 const supabase = createClient()
 
@@ -36,7 +43,12 @@ function formatPercent(value: number) {
   return `${sign}${value.toFixed(1)}%`
 }
 
-type SortKey = 'qty' | 'amount' | 'avg'
+type SortKey =
+  | 'netQty'
+  | 'netAmount'
+  | 'avgNetAmount'
+  | 'returnQty'
+  | 'cancelQty'
 
 export function SalesStatsManager() {
   const defaultRange = getPeriodRange('week')
@@ -50,25 +62,41 @@ export function SalesStatsManager() {
 
   const [rows, setRows] = useState<OpsSalesRow[]>([])
   const [prevRows, setPrevRows] = useState<OpsSalesRow[]>([])
+
+  const [claimRows, setClaimRows] = useState<OpsClaimRow[]>([])
+  const [prevClaimRows, setPrevClaimRows] = useState<OpsClaimRow[]>([])
+
   const [loading, setLoading] = useState(false)
 
-  const [dateSortKey, setDateSortKey] = useState<SortKey>('qty')
-  const [shopSortKey, setShopSortKey] = useState<SortKey>('qty')
-  const [modelSortKey, setModelSortKey] = useState<SortKey>('qty')
-  const [skuSortKey, setSkuSortKey] = useState<SortKey>('qty')
+  const [dateSortKey, setDateSortKey] =
+    useState<SortKey>('netQty')
+
+  const [shopSortKey, setShopSortKey] =
+    useState<SortKey>('netQty')
+
+  const [modelSortKey, setModelSortKey] =
+    useState<SortKey>('netQty')
+
+  const [skuSortKey, setSkuSortKey] =
+    useState<SortKey>('netQty')
 
   const [rocketAmount, setRocketAmount] = useState(0)
-  const [rocketCount, setRocketCount] = useState(0)  
+  const [rocketQty, setRocketQty] = useState(0)
 
   async function loadData() {
     setLoading(true)
 
     try {
-      const previousRange = getPreviousPeriodRange(startDate, endDate)
+      const previousRange = getPreviousPeriodRange(
+        startDate,
+        endDate
+      )
 
       const [
         currentData,
         previousData,
+        currentClaims,
+        previousClaims,
         rocketPrices,
         giftModelRes,
       ] = await Promise.all([
@@ -80,6 +108,20 @@ export function SalesStatsManager() {
         }),
 
         fetchOpsSalesRowsByRange({
+          startDate: previousRange.startDate,
+          endDate: previousRange.endDate,
+          keyword,
+          shop,
+        }),
+
+        fetchOpsClaimRowsByRange({
+          startDate,
+          endDate,
+          keyword,
+          shop,
+        }),
+
+        fetchOpsClaimRowsByRange({
           startDate: previousRange.startDate,
           endDate: previousRange.endDate,
           keyword,
@@ -103,6 +145,12 @@ export function SalesStatsManager() {
       const giftModels =
         (giftModelRes.data || []) as GiftModel[]
 
+      const giftModelSet = new Set(
+        giftModels.map((item) =>
+          item.model_name.trim().toUpperCase()
+        )
+      )
+
       const currentAdjusted = applyRocketSupplyAmount(
         currentData,
         rocketPrices
@@ -123,59 +171,52 @@ export function SalesStatsManager() {
         giftModels
       )
 
+      const currentClaimRows = excludeGiftClaimRows(
+        currentClaims,
+        giftModelSet
+      )
+
+      const previousClaimRows = excludeGiftClaimRows(
+        previousClaims,
+        giftModelSet
+      )
+
       setRows(currentSalesRows)
       setPrevRows(previousSalesRows)
 
-      // 쿠팡로켓 금액은 사은품 제외 후 다시 계산하는 편이 정확함
-      const currentGiftModelSet = new Set(
-        giftModels.map((item) =>
-          item.model_name.trim().toUpperCase()
-        )
+      setClaimRows(currentClaimRows)
+      setPrevClaimRows(previousClaimRows)
+
+      /*
+      * 쿠팡로켓 원본 금액이 0원이었고,
+      * 로켓 매입가가 실제 적용된 행만 계산
+      */
+      const originalRowMap = new Map(
+        currentData.map((row) => [row.id, row])
       )
 
-      const filteredRocketRows = currentAdjusted.rows.filter((row) => {
-        const model = String(row.sku || '')
-          .split('_')[0]
-          .trim()
-          .toUpperCase()
+      const adjustedRocketRows = currentSalesRows.filter((row) => {
+        const originalRow = originalRowMap.get(row.id)
 
-        return !currentGiftModelSet.has(model)
+        return (
+          String(row.shop || '').trim() === '쿠팡로켓' &&
+          Number(originalRow?.amount || 0) === 0 &&
+          Number(row.amount || 0) !== 0
+        )
       })
 
-      const rocketOnlyAmount = filteredRocketRows.reduce((sum, row) => {
-        const shopName = String(row.shop || '').trim()
-        const originalRow = currentData.find(
-          (sourceRow) => sourceRow.id === row.id
-        )
+      const appliedRocketAmount = adjustedRocketRows.reduce(
+        (sum, row) => sum + Number(row.amount || 0),
+        0
+      )
 
-        if (
-          shopName !== '쿠팡로켓' ||
-          Number(originalRow?.amount || 0) !== 0
-        ) {
-          return sum
-        }
+      const appliedRocketQty = adjustedRocketRows.reduce(
+        (sum, row) => sum + Number(row.qty || 0),
+        0
+      )
 
-        return sum + Number(row.amount || 0)
-      }, 0)
-
-      const rocketOnlyCount = filteredRocketRows.reduce((sum, row) => {
-        const shopName = String(row.shop || '').trim()
-        const originalRow = currentData.find(
-          (sourceRow) => sourceRow.id === row.id
-        )
-
-        if (
-          shopName !== '쿠팡로켓' ||
-          Number(originalRow?.amount || 0) !== 0
-        ) {
-          return sum
-        }
-
-        return sum + 1
-      }, 0)
-
-      setRocketAmount(rocketOnlyAmount)
-      setRocketCount(rocketOnlyCount)
+      setRocketAmount(appliedRocketAmount)
+      setRocketQty(appliedRocketQty)
     } catch (error: any) {
       alert(`주문통계 조회 실패\n\n${error.message}`)
     } finally {
@@ -213,23 +254,15 @@ export function SalesStatsManager() {
     setEndDate(range.endDate)
   }
 
-  function sortSummaryRows<T extends { qty: number; amount: number }>(
-    rows: T[],
+  function sortSummaryRows(
+    summaryRows: NetSalesSummaryRow[],
     sortKey: SortKey
   ) {
-    return [...rows].sort((a, b) => {
-      if (sortKey === 'amount') {
-        return Number(b.amount || 0) - Number(a.amount || 0)
-      }
-
-      if (sortKey === 'avg') {
-        const avgA = Number(a.amount || 0) / Math.max(Number(a.qty || 0), 1)
-        const avgB = Number(b.amount || 0) / Math.max(Number(b.qty || 0), 1)
-
-        return avgB - avgA
-      }
-
-      return Number(b.qty || 0) - Number(a.qty || 0)
+    return [...summaryRows].sort((a, b) => {
+      return (
+        Number(b[sortKey] || 0) -
+        Number(a[sortKey] || 0)
+      )
     })
   }
 
@@ -241,28 +274,135 @@ export function SalesStatsManager() {
   const prevAmount = sumSalesAmount(prevRows)
   const prevAvg = calcAverageOrderAmount(prevRows)
 
+  const cancelRows = useMemo(
+    () => getCancelRows(claimRows),
+    [claimRows]
+  )
+
+  const returnRows = useMemo(
+    () => getReturnRows(claimRows),
+    [claimRows]
+  )
+
+  const prevCancelRows = useMemo(
+    () => getCancelRows(prevClaimRows),
+    [prevClaimRows]
+  )
+
+  const prevReturnRows = useMemo(
+    () => getReturnRows(prevClaimRows),
+    [prevClaimRows]
+  )
+
+  const cancelQty = sumClaimQty(cancelRows)
+  const cancelAmount = sumClaimAmount(cancelRows)
+
+  const returnQty = sumClaimQty(returnRows)
+  const returnAmount = sumClaimAmount(returnRows)
+
+  const prevCancelQty = sumClaimQty(prevCancelRows)
+  const prevCancelAmount = sumClaimAmount(prevCancelRows)
+
+  const prevReturnQty = sumClaimQty(prevReturnRows)
+  const prevReturnAmount = sumClaimAmount(prevReturnRows)
+
+  const netQty =
+    currentQty - cancelQty - returnQty
+
+  const netAmount =
+    currentAmount - cancelAmount - returnAmount
+
+  const prevNetQty =
+    prevQty - prevCancelQty - prevReturnQty
+
+  const prevNetAmount =
+    prevAmount - prevCancelAmount - prevReturnAmount
+
+  const cancelAvg =
+    cancelQty > 0 ? cancelAmount / cancelQty : 0
+
+  const returnAvg =
+    returnQty > 0 ? returnAmount / returnQty : 0
+
+  const netAvg =
+    netQty > 0 ? netAmount / netQty : 0
+
+  const prevNetAvg =
+    prevNetQty > 0 ? prevNetAmount / prevNetQty : 0
+
   const qtyGrowth = calcGrowthRate(currentQty, prevQty)
   const amountGrowth = calcGrowthRate(currentAmount, prevAmount)
   const avgGrowth = calcGrowthRate(currentAvg, prevAvg)
 
+  const netQtyGrowth = calcGrowthRate(
+    netQty,
+    prevNetQty
+  )
+
+  const netAmountGrowth = calcGrowthRate(
+    netAmount,
+    prevNetAmount
+  )
+
+  const netAvgGrowth = calcGrowthRate(
+    netAvg,
+    prevNetAvg
+  )
+
   const dateRows = useMemo(
-    () => sortSummaryRows(groupSalesByDate(rows), dateSortKey),
-    [rows, dateSortKey]
+    () =>
+      sortSummaryRows(
+        buildNetSalesSummary(
+          rows,
+          claimRows,
+          (row) => row.order_date,
+          (row) => row.claim_date
+        ),
+        dateSortKey
+      ),
+    [rows, claimRows, dateSortKey]
   )
 
   const shopRows = useMemo(
-    () => sortSummaryRows(groupSalesByShop(rows), shopSortKey),
-    [rows, shopSortKey]
+    () =>
+      sortSummaryRows(
+        buildNetSalesSummary(
+          rows,
+          claimRows,
+          (row) => String(row.shop || '-'),
+          (row) => String(row.shop || '-')
+        ),
+        shopSortKey
+      ),
+    [rows, claimRows, shopSortKey]
   )
 
   const modelTop = useMemo(
-    () => sortSummaryRows(groupSalesByModel(rows), modelSortKey).slice(0, 20),
-    [rows, modelSortKey]
+    () =>
+      sortSummaryRows(
+        buildNetSalesSummary(
+          rows,
+          claimRows,
+          (row) => getModelFromSku(row.sku),
+          (row) => getModelFromSku(row.sku)
+        ),
+        modelSortKey
+      ).slice(0, 20),
+    [rows, claimRows, modelSortKey]
   )
 
   const skuTop = useMemo(
-    () => sortSummaryRows(groupSalesBySku(rows), skuSortKey).slice(0, 20),
-    [rows, skuSortKey]
+    () =>
+      sortSummaryRows(
+        buildNetSalesSummary(
+          rows,
+          claimRows,
+          (row) => String(row.sku || '-'),
+          (row) => String(row.sku || '-')
+        ),
+        skuSortKey
+      ).slice(0, 20),
+    [rows, claimRows, skuSortKey]
   )
 
   return (
@@ -350,59 +490,124 @@ export function SalesStatsManager() {
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <StatCard
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <DetailStatCard
           title="주문수량"
-          value={`${formatNumber(currentQty)}개`}
-          sub={`이전기간 대비 ${formatPercent(qtyGrowth)}`}
-          growth={qtyGrowth}
+          mainLabel="주문수량"
+          mainValue={`${formatNumber(currentQty)}개`}
+          rows={[
+            {
+              label: '반품수량',
+              value: `${formatNumber(returnQty)}개`,
+            },
+            {
+              label: '취소수량',
+              value: `${formatNumber(cancelQty)}개`,
+            },
+            {
+              label: '순출고수량',
+              value: `${formatNumber(netQty)}개`,
+              emphasize: true,
+            },
+          ]}
+          footer={`이전기간 대비 ${formatPercent(netQtyGrowth)}`}
+          growth={netQtyGrowth}
         />
 
-        <StatCard
+        <DetailStatCard
           title="주문금액"
-          value={`${formatNumber(currentAmount)}원`}
-          sub={`이전기간 대비 ${formatPercent(amountGrowth)}`}
-          growth={amountGrowth}
+          mainLabel="주문금액"
+          mainValue={`${formatNumber(currentAmount)}원`}
+          rows={[
+            {
+              label: '반품금액',
+              value: `${formatNumber(returnAmount)}원`,
+            },
+            {
+              label: '취소금액',
+              value: `${formatNumber(cancelAmount)}원`,
+            },
+            {
+              label: '순매출금액',
+              value: `${formatNumber(netAmount)}원`,
+              emphasize: true,
+            },
+          ]}
+          footer={`이전기간 대비 ${formatPercent(netAmountGrowth)}`}
+          growth={netAmountGrowth}
         />
 
-        <StatCard
+        <DetailStatCard
           title="평균 주문금액"
-          value={`${formatNumber(Math.round(currentAvg))}원`}
-          sub={`이전기간 대비 ${formatPercent(avgGrowth)}`}
-          growth={avgGrowth}
+          mainLabel="주문금액 평균"
+          mainValue={`${formatNumber(Math.round(currentAvg))}원`}
+          rows={[
+            {
+              label: '반품금액 평균',
+              value: `${formatNumber(Math.round(returnAvg))}원`,
+            },
+            {
+              label: '취소금액 평균',
+              value: `${formatNumber(Math.round(cancelAvg))}원`,
+            },
+            {
+              label: '순매출금액 평균',
+              value: `${formatNumber(Math.round(netAvg))}원`,
+              emphasize: true,
+            },
+          ]}
+          footer={`이전기간 대비 ${formatPercent(netAvgGrowth)}`}
+          growth={netAvgGrowth}
         />
 
-        <StatCard
-          title="쿠팡로켓(매입가)"
-          value={`${formatNumber(rocketAmount)}원`}
-          sub={`${formatNumber(rocketCount)}종 매입가 적용`}
+        <DetailStatCard
+          title="쿠팡로켓"
+          mainLabel="적용 매입가"
+          mainValue={`${formatNumber(rocketAmount)}원`}
+          rows={[
+            {
+              label: '적용 수량',
+              value: `${formatNumber(rocketQty)}개`,
+              emphasize: true,
+            },
+          ]}
         />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
         <SummaryTable
-          title="일자별 출고"
+          title="일자별 순매출"
           sortKey={dateSortKey}
           onSortKeyChange={setDateSortKey}
-          headers={['일자', '수량', '금액', '평균 판매가']}
+          headers={[
+            '일자',
+            '순출고수량',
+            '순매출금액',
+            '평균 순판매가',
+          ]}
           rows={dateRows.map((item) => [
-            item.date,
-            formatNumber(item.qty),
-            formatNumber(item.amount),
-            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
+            item.label,
+            formatNumber(item.netQty),
+            formatNumber(item.netAmount),
+            formatNumber(Math.round(item.avgNetAmount)),
           ])}
         />
 
         <SummaryTable
-          title="쇼핑몰별 출고"
+          title="쇼핑몰별 순매출"
           sortKey={shopSortKey}
-          onSortKeyChange={setShopSortKey}          
-          headers={['쇼핑몰', '수량', '금액', '평균 판매가']}
+          onSortKeyChange={setShopSortKey}
+          headers={[
+            '쇼핑몰',
+            '순출고수량',
+            '순매출금액',
+            '평균 순판매가',
+          ]}
           rows={shopRows.map((item) => [
-            item.shop,
-            formatNumber(item.qty),
-            formatNumber(item.amount),
-            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
+            item.label,
+            formatNumber(item.netQty),
+            formatNumber(item.netAmount),
+            formatNumber(Math.round(item.avgNetAmount)),
           ])}
         />
       </section>
@@ -412,12 +617,23 @@ export function SalesStatsManager() {
           title="모델별 TOP 20"
           sortKey={modelSortKey}
           onSortKeyChange={setModelSortKey}
-          headers={['모델명', '수량', '금액', '평균 판매가']}
+          headers={[
+            '모델명',
+            '주문수량',
+            '반품수량',
+            '취소수량',
+            '순출고수량',
+            '순매출금액',
+            '평균 순판매가',
+          ]}
           rows={modelTop.map((item) => [
-            item.model,
-            formatNumber(item.qty),
-            formatNumber(item.amount),
-            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
+            item.label,
+            formatNumber(item.orderQty),
+            formatNumber(item.returnQty),
+            formatNumber(item.cancelQty),
+            formatNumber(item.netQty),
+            formatNumber(item.netAmount),
+            formatNumber(Math.round(item.avgNetAmount)),
           ])}
         />
 
@@ -425,12 +641,23 @@ export function SalesStatsManager() {
           title="SKU별 TOP 20"
           sortKey={skuSortKey}
           onSortKeyChange={setSkuSortKey}
-          headers={['SKU', '수량', '금액', '평균 판매가']}
+          headers={[
+            'SKU',
+            '주문수량',
+            '반품수량',
+            '취소수량',
+            '순출고수량',
+            '순매출금액',
+            '평균 순판매가',
+          ]}
           rows={skuTop.map((item) => [
-            item.sku,
-            formatNumber(item.qty),
-            formatNumber(item.amount),
-            formatNumber(Math.round(item.amount / Math.max(item.qty, 1))),
+            item.label,
+            formatNumber(item.orderQty),
+            formatNumber(item.returnQty),
+            formatNumber(item.cancelQty),
+            formatNumber(item.netQty),
+            formatNumber(item.netAmount),
+            formatNumber(Math.round(item.avgNetAmount)),
           ])}
         />
       </section>
@@ -467,6 +694,88 @@ function StatCard({
   )
 }
 
+function DetailStatCard({
+  title,
+  mainLabel,
+  mainValue,
+  rows,
+  footer,
+  growth,
+}: {
+  title: string
+  mainLabel: string
+  mainValue: string
+  rows: {
+    label: string
+    value: string
+    emphasize?: boolean
+  }[]
+  footer?: string
+  growth?: number
+}) {
+  const growthClass =
+    growth === undefined
+      ? 'text-gray-500'
+      : growth > 0
+        ? 'text-blue-600'
+        : growth < 0
+          ? 'text-red-600'
+          : 'text-gray-500'
+
+  return (
+    <div className="rounded-2xl border bg-white p-5 shadow-sm">
+      <p className="text-sm font-semibold text-gray-900">
+        {title}
+      </p>
+
+      <div className="mt-4 border-b pb-4">
+        <p className="text-xs text-gray-500">
+          {mainLabel}
+        </p>
+
+        <p className="mt-1 text-2xl font-bold text-gray-900">
+          {mainValue}
+        </p>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {rows.map((item) => (
+          <div
+            key={item.label}
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <span
+              className={
+                item.emphasize
+                  ? 'font-semibold text-gray-900'
+                  : 'text-gray-500'
+              }
+            >
+              {item.label}
+            </span>
+
+            <span
+              className={
+                item.emphasize
+                  ? 'font-bold text-gray-900'
+                  : 'font-medium text-gray-700'
+              }
+            >
+              {item.value}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {footer && (
+        <p className={`mt-4 text-xs ${growthClass}`}>
+          {footer}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function SummaryTable({
   title,
   headers,
@@ -491,9 +800,11 @@ function SummaryTable({
           onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
           className="h-8 rounded-md border px-2 text-xs"
         >
-          <option value="qty">수량순</option>
-          <option value="amount">금액순</option>
-          <option value="avg">객단가순</option>
+          <option value="netQty">순출고수량순</option>
+          <option value="netAmount">순매출금액순</option>
+          <option value="avgNetAmount">평균 순판매가순</option>
+          <option value="returnQty">반품수량순</option>
+          <option value="cancelQty">취소수량순</option>
         </select>
       </div>
       <div className="mt-4 max-h-[520px] overflow-auto">
