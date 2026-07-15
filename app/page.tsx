@@ -29,6 +29,8 @@ import {
   Images,
   LayoutList,
   TrendingUp,
+  Gift,
+  RotateCcw,
 } from 'lucide-react'
 
 const sections = [
@@ -63,6 +65,8 @@ const sections = [
     items: [
       { title: '주문통계', href: '/sales-stats', icon: TrendingUp, desc: '주문 통계 조회' },
       { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck, desc: '로켓 SKU 관리' },
+      { title: '클레임 통계', href: '/claims', icon: RotateCcw, desc: '클레임 통계 조회' },
+      { title: '사은품 출고내역', href: '/gift-shipments', icon: Gift, desc: '사은품 출고 내역 조회' },
     ],
   },
   {

@@ -75,7 +75,7 @@ const menuSections = [
     key: 'sales',
     title: '판매관리',
     items: [
-      { title: '출고통계', href: '/sales-stats', icon: TrendingUp },
+      { title: '주문통계', href: '/sales-stats', icon: TrendingUp },
       { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck },
       { title: '클레임 통계', href: '/claims', icon: RotateCcw },
       { title: '사은품 출고내역', href: '/gift-shipments', icon: Gift },
