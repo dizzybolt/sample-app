@@ -679,8 +679,10 @@ export function InventoryManager() {
       (item, index) => ({
         NO: index + 1,
         창고: warehouses.find((w) => w.id === item.warehouse_id)?.name || '',
+        품번: getSkuMapping(item.sku)?.model_name || '',
         SKU: item.sku,
-        재고수량: item.qty,
+        앱재고: item.qty,
+        ERP재고: getOpsStockQty(item.sku),
         기준일: item.work_date || item.updated_at?.slice(0, 10) || '',
         비고: item.note || '',
       })
@@ -750,8 +752,10 @@ export function InventoryManager() {
     const rows = targetItems.map((item, index) => ({
       NO: index + 1,
       창고: warehouses.find((w) => w.id === item.warehouse_id)?.name || '',
+      품번: getSkuMapping(item.sku)?.model_name || '',
       SKU: item.sku,
-      재고수량: item.qty,
+      앱재고: item.qty,
+      ERP재고: getOpsStockQty(item.sku),
       기준일: item.work_date || item.updated_at?.slice(0, 10) || '',
       비고: item.note || '',
     }))

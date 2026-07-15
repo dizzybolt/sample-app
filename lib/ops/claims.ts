@@ -153,26 +153,76 @@ export function getReturnRows(rows: OpsClaimRow[]) {
 export function buildNetSalesSummary(
   salesRows: OpsSalesRow[],
   claimRows: OpsClaimRow[],
-  salesKey: (row: OpsSalesRow) => string,
-  claimKey: (row: OpsClaimRow) => string,
+  salesGroupKey: (row: OpsSalesRow) => string,
+  claimGroupKey: (row: OpsClaimRow) => string,
   salesLabel?: (row: OpsSalesRow) => string,
   claimLabel?: (row: OpsClaimRow) => string
 ) {
-  const map = new Map<string, NetSalesSummaryRow>()
+  type DetailedSummaryRow = NetSalesSummaryRow & {
+    groupKey: string
+    shopKey: string
+    warehouseKey: string
+  }
+
+  /*
+   * 1차 집계 키
+   *
+   * 화면 집계 기준 + 쇼핑몰 + 창고
+   *
+   * 예:
+   * 모델명|쿠팡로켓|로켓창고
+   * SKU|온라인|본사창고
+   */
+  const detailedMap = new Map<string, DetailedSummaryRow>()
+
+  function normalizeDimension(value?: string | null) {
+    return String(value || '-').trim().toUpperCase() || '-'
+  }
+
+  function createDetailKey(
+    groupKey: string,
+    shop?: string | null,
+    warehouse?: string | null
+  ) {
+    return [
+      normalizeDimension(groupKey),
+      normalizeDimension(shop),
+      normalizeDimension(warehouse),
+    ].join('||')
+  }
 
   salesRows.forEach((row) => {
-    const key = normalizeText(salesKey(row)) || '-'
-    const label = normalizeText(salesLabel?.(row)) || key
+    const groupKey =
+      String(salesGroupKey(row) || '-').trim() || '-'
 
-    const previous = map.get(key) || {
-      key,
+    const label =
+      String(salesLabel?.(row) || groupKey).trim() || groupKey
+
+    const shopKey = normalizeDimension(row.shop)
+    const warehouseKey = normalizeDimension(row.warehouse)
+
+    const detailKey = createDetailKey(
+      groupKey,
+      row.shop,
+      row.warehouse
+    )
+
+    const previous = detailedMap.get(detailKey) || {
+      key: detailKey,
+      groupKey,
       label,
+      shopKey,
+      warehouseKey,
+
       orderQty: 0,
       orderAmount: 0,
+
       cancelQty: 0,
       cancelAmount: 0,
+
       returnQty: 0,
       returnAmount: 0,
+
       netQty: 0,
       netAmount: 0,
       avgNetAmount: 0,
@@ -181,22 +231,41 @@ export function buildNetSalesSummary(
     previous.orderQty += Number(row.qty || 0)
     previous.orderAmount += Number(row.amount || 0)
 
-    map.set(key, previous)
+    detailedMap.set(detailKey, previous)
   })
 
   claimRows.forEach((row) => {
-    const key = normalizeText(claimKey(row)) || '-'
-    const label = normalizeText(claimLabel?.(row)) || key
+    const groupKey =
+      String(claimGroupKey(row) || '-').trim() || '-'
 
-    const previous = map.get(key) || {
-      key,
+    const label =
+      String(claimLabel?.(row) || groupKey).trim() || groupKey
+
+    const shopKey = normalizeDimension(row.shop)
+    const warehouseKey = normalizeDimension(row.warehouse)
+
+    const detailKey = createDetailKey(
+      groupKey,
+      row.shop,
+      row.warehouse
+    )
+
+    const previous = detailedMap.get(detailKey) || {
+      key: detailKey,
+      groupKey,
       label,
+      shopKey,
+      warehouseKey,
+
       orderQty: 0,
       orderAmount: 0,
+
       cancelQty: 0,
       cancelAmount: 0,
+
       returnQty: 0,
       returnAmount: 0,
+
       netQty: 0,
       netAmount: 0,
       avgNetAmount: 0,
@@ -215,21 +284,87 @@ export function buildNetSalesSummary(
       previous.returnAmount += amount
     }
 
-    map.set(key, previous)
+    detailedMap.set(detailKey, previous)
   })
 
-  return Array.from(map.values()).map((row) => {
-    const netQty =
-      row.orderQty - row.cancelQty - row.returnQty
+  /*
+   * 쇼핑몰 + 창고 단위로 먼저 순수량과 순매출을 계산한다.
+   */
+  const detailedRows = Array.from(detailedMap.values()).map(
+    (row) => {
+      const netQty =
+        row.orderQty -
+        row.cancelQty -
+        row.returnQty
 
-    const netAmount =
-      row.orderAmount - row.cancelAmount - row.returnAmount
+      const netAmount =
+        row.orderAmount -
+        row.cancelAmount -
+        row.returnAmount
 
-    return {
-      ...row,
-      netQty,
-      netAmount,
-      avgNetAmount: netQty > 0 ? netAmount / netQty : 0,
+      return {
+        ...row,
+        netQty,
+        netAmount,
+        avgNetAmount:
+          netQty !== 0
+            ? netAmount / netQty
+            : 0,
+      }
     }
+  )
+
+  /*
+   * 화면 표시용으로 다시 그룹 기준을 합산한다.
+   *
+   * 모델별 화면이라면:
+   * 모델 + 쇼핑몰 + 창고로 계산
+   * → 모델 기준으로 최종 합산
+   */
+  const resultMap = new Map<string, NetSalesSummaryRow>()
+
+  detailedRows.forEach((row) => {
+    const resultKey =
+      normalizeDimension(row.groupKey)
+
+    const previous = resultMap.get(resultKey) || {
+      key: resultKey,
+      label: row.label,
+
+      orderQty: 0,
+      orderAmount: 0,
+
+      cancelQty: 0,
+      cancelAmount: 0,
+
+      returnQty: 0,
+      returnAmount: 0,
+
+      netQty: 0,
+      netAmount: 0,
+      avgNetAmount: 0,
+    }
+
+    previous.orderQty += row.orderQty
+    previous.orderAmount += row.orderAmount
+
+    previous.cancelQty += row.cancelQty
+    previous.cancelAmount += row.cancelAmount
+
+    previous.returnQty += row.returnQty
+    previous.returnAmount += row.returnAmount
+
+    previous.netQty += row.netQty
+    previous.netAmount += row.netAmount
+
+    resultMap.set(resultKey, previous)
   })
+
+  return Array.from(resultMap.values()).map((row) => ({
+    ...row,
+    avgNetAmount:
+      row.netQty !== 0
+        ? row.netAmount / row.netQty
+        : 0,
+  }))
 }
