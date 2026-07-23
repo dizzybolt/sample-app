@@ -68,6 +68,7 @@ const menuSections = [
     items: [
       { title: '재고관리', href: '/inventory', icon: Boxes },
       { title: '입고이력', href: '/inbound-history', icon: Package },
+      { title: '발주추천', href: '/reorder-recommendations', icon: FileCog },
       //{ title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck },
       { title: '창고관리', href: '/warehouses', icon: Warehouse },
     ],
