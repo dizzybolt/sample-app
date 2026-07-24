@@ -16,12 +16,6 @@ export type ReorderSalesRow = {
   qty: number
 }
 
-export type ReorderClaimRow = {
-  claim_date: string
-  sku: string
-  qty: number
-}
-
 export type ReorderStockRow = {
   snapshot_date: string
   sku: string
@@ -51,9 +45,7 @@ export type ReorderSkuSummary = {
   lastInboundDate: string
   lastOutboundDate: string
   inboundQty: number
-  salesQty: number
-  claimQty: number
-  netSalesQty: number
+  outboundQty: number
   currentStockQty: number
   depletionRate: number
   dailyAverageQty: number
@@ -69,9 +61,7 @@ export type ReorderModelSummary = {
   lastOutboundDate: string
   analysisDays: number
   inboundQty: number
-  salesQty: number
-  claimQty: number
-  netSalesQty: number
+  outboundQty: number
   currentStockQty: number
   depletionRate: number
   dailyAverageQty: number
@@ -199,7 +189,6 @@ function selectInboundRows(
 export function buildReorderRecommendations(
   inboundRows: ReorderInboundRow[],
   salesRows: ReorderSalesRow[],
-  claimRows: ReorderClaimRow[],
   stockRows: ReorderStockRow[],
   options: ReorderOptions
 ) {
@@ -243,27 +232,6 @@ export function buildReorderRecommendations(
     const values = salesBySku.get(sku) || []
     values.push({ ...row, order_date: date, sku })
     salesBySku.set(sku, values)
-  })
-
-  const claimQtyBySku = new Map<string, number>()
-  claimRows.forEach((row) => {
-    const date = toDateOnly(row.claim_date)
-    const sku = normalizeReorderSku(row.sku)
-
-    if (
-      !sku ||
-      !date ||
-      date < options.startDate ||
-      date > options.endDate ||
-      excludedDates.has(date)
-    ) {
-      return
-    }
-
-    claimQtyBySku.set(
-      sku,
-      (claimQtyBySku.get(sku) || 0) + Number(row.qty || 0)
-    )
   })
 
   const stockBySku = new Map<string, number>()
@@ -320,15 +288,13 @@ export function buildReorderRecommendations(
         (sum, row) => sum + Number(row.inbound_qty || 0),
         0
       )
-      const salesQty = skuSales.reduce(
+      const outboundQty = skuSales.reduce(
         (sum, row) => sum + Number(row.qty || 0),
         0
       )
-      const claimQty = claimQtyBySku.get(sku) || 0
-      const netSalesQty = salesQty - claimQty
       const currentStockQty = stockBySku.get(sku) || 0
       const dailyAverageQty =
-        analysisDays > 0 ? netSalesQty / analysisDays : 0
+        analysisDays > 0 ? outboundQty / analysisDays : 0
       const expectedSalesQty = Math.max(
         Math.round(dailyAverageQty * targetDays * applicationRate),
         0
@@ -353,11 +319,9 @@ export function buildReorderRecommendations(
           ''
         ),
         inboundQty,
-        salesQty,
-        claimQty,
-        netSalesQty,
+        outboundQty,
         currentStockQty,
-        depletionRate: getRate(netSalesQty, inboundQty),
+        depletionRate: getRate(outboundQty, inboundQty),
         dailyAverageQty,
         expectedSalesQty,
         recommendedQty: Math.max(expectedSalesQty - currentStockQty, 0),
@@ -365,16 +329,8 @@ export function buildReorderRecommendations(
     })
 
     const inboundQty = skuRows.reduce((sum, row) => sum + row.inboundQty, 0)
-    const salesQty = skuRows.reduce(
-      (sum, row) => sum + row.salesQty,
-      0
-    )
-    const claimQty = skuRows.reduce(
-      (sum, row) => sum + row.claimQty,
-      0
-    )
-    const netSalesQty = skuRows.reduce(
-      (sum, row) => sum + row.netSalesQty,
+    const outboundQty = skuRows.reduce(
+      (sum, row) => sum + row.outboundQty,
       0
     )
     const currentStockQty = skuRows.reduce(
@@ -399,12 +355,10 @@ export function buildReorderRecommendations(
       ),
       analysisDays,
       inboundQty,
-      salesQty,
-      claimQty,
-      netSalesQty,
+      outboundQty,
       currentStockQty,
-      depletionRate: getRate(netSalesQty, inboundQty),
-      dailyAverageQty: analysisDays > 0 ? netSalesQty / analysisDays : 0,
+      depletionRate: getRate(outboundQty, inboundQty),
+      dailyAverageQty: analysisDays > 0 ? outboundQty / analysisDays : 0,
       expectedSalesQty: skuRows.reduce(
         (sum, row) => sum + row.expectedSalesQty,
         0
@@ -424,7 +378,7 @@ export function buildReorderRecommendations(
     .filter(
       (row) =>
         row.inboundQty > 0 &&
-        row.netSalesQty > 0 &&
+        row.outboundQty > 0 &&
         row.recommendedQty > 0 &&
         row.depletionRate >= depletionThreshold
     )

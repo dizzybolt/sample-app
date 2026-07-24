@@ -1,11 +1,13 @@
 'use client'
 
+import * as XLSX from 'xlsx'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   CalendarRange,
   ChevronDown,
   ChevronUp,
   Database,
+  Download,
   RefreshCw,
   Search,
 } from 'lucide-react'
@@ -15,7 +17,6 @@ import { Input } from '@/components/ui/input'
 import {
   buildReorderRecommendations,
   REORDER_DEPLETION_THRESHOLD,
-  type ReorderClaimRow,
   type ReorderDayBasis,
   type ReorderInboundBasis,
   type ReorderInboundRow,
@@ -31,7 +32,6 @@ const MODEL_PAGE_SIZE = 30
 type DataDates = {
   inbound: string
   sales: string
-  claims: string
   stock: string
 }
 
@@ -39,6 +39,17 @@ type DateRange = {
   column: string
   startDate?: string
   endDate?: string
+}
+
+type ReorderProductImageRow = {
+  model_name: string
+  image_url: string | null
+}
+
+type AppliedOptions = {
+  startDate: string
+  endDate: string
+  description: string
 }
 
 function formatNumber(value: number | null | undefined) {
@@ -99,6 +110,14 @@ function parseExcludedDates(value: string) {
   )
 }
 
+function normalizeModelName(value?: string | null) {
+  return String(value || '').trim().toUpperCase().replace(/\s+/g, '')
+}
+
+function getSafeFileName(value: string) {
+  return value.replace(/[\\/:*?"<>|]/g, '_')
+}
+
 export function ReorderRecommendationsManager() {
   const supabase = useMemo(() => createClient(), [])
   const defaultRange = useMemo(() => getDefaultInboundRange(), [])
@@ -109,21 +128,26 @@ export function ReorderRecommendationsManager() {
   const [currentPage, setCurrentPage] = useState(1)
   const [startDate, setStartDate] = useState(defaultRange.startDate)
   const [endDate, setEndDate] = useState(defaultRange.endDate)
-  const [targetDays, setTargetDays] = useState('30')
+  const [targetDays, setTargetDays] = useState('60')
   const [applicationRate, setApplicationRate] = useState('100')
   const [depletionThreshold, setDepletionThreshold] = useState(
     String(REORDER_DEPLETION_THRESHOLD)
   )
   const [dayBasis, setDayBasis] = useState<ReorderDayBasis>('active')
   const [excludedDates, setExcludedDates] = useState('')
-  const [appliedDescription, setAppliedDescription] = useState('')
+  const [appliedOptions, setAppliedOptions] = useState<AppliedOptions>({
+    startDate: defaultRange.startDate,
+    endDate: defaultRange.endDate,
+    description: '',
+  })
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [dataDates, setDataDates] = useState<DataDates>({
     inbound: '',
     sales: '',
-    claims: '',
     stock: '',
   })
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
   const filteredModels = useMemo(() => {
@@ -156,18 +180,14 @@ export function ReorderRecommendationsManager() {
       filteredModels.reduce(
         (result, row) => {
           result.inboundQty += row.inboundQty
-          result.salesQty += row.salesQty
-          result.claimQty += row.claimQty
-          result.netSalesQty += row.netSalesQty
+          result.outboundQty += row.outboundQty
           result.currentStockQty += row.currentStockQty
           result.recommendedQty += row.recommendedQty
           return result
         },
         {
           inboundQty: 0,
-          salesQty: 0,
-          claimQty: 0,
-          netSalesQty: 0,
+          outboundQty: 0,
           currentStockQty: 0,
           recommendedQty: 0,
         }
@@ -231,7 +251,7 @@ export function ReorderRecommendationsManager() {
     setErrorMessage('')
 
     try {
-      const [inboundRows, salesRows, claimRows, allStockRows] =
+      const [inboundRows, salesRows, allStockRows, productImages] =
         await Promise.all([
         fetchAllRows<ReorderInboundRow>(
           'ops_inbound_history',
@@ -248,20 +268,15 @@ export function ReorderRecommendationsManager() {
             endDate,
           }
         ),
-        fetchAllRows<ReorderClaimRow>(
-          'ops_claims_daily',
-          'claim_date, sku, qty',
-          'claim_date',
-          {
-            column: 'claim_date',
-            startDate,
-            endDate,
-          }
-        ),
         fetchAllRows<ReorderStockRow>(
           'ops_stock_snapshot',
           'snapshot_date, sku, qty',
           'snapshot_date'
+        ),
+        fetchAllRows<ReorderProductImageRow>(
+          'product_images',
+          'model_name, image_url',
+          'model_name'
         ),
       ])
 
@@ -279,7 +294,6 @@ export function ReorderRecommendationsManager() {
       const result = buildReorderRecommendations(
         inboundRows,
         salesRows,
-        claimRows,
         stockRows,
         {
           startDate,
@@ -298,11 +312,11 @@ export function ReorderRecommendationsManager() {
       setDataDates({
         inbound: getLatestDate(inboundRows, (row) => row.inbound_date),
         sales: getLatestDate(salesRows, (row) => row.order_date),
-        claims: getLatestDate(claimRows, (row) => row.claim_date),
         stock: latestStockDate,
       })
-      setAppliedDescription(
-        `${formatDate(startDate)}~${formatDate(endDate)} · ${
+      const description = `${formatDate(startDate)}~${formatDate(
+        endDate
+      )} · ${
           dayBasis === 'active' ? '출고 발생일 기준' : '전체 기간일 기준'
         } · 향후 ${formatNumber(parsedTargetDays)}일 · 적용률 ${formatNumber(
           parsedApplicationRate
@@ -311,6 +325,20 @@ export function ReorderRecommendationsManager() {
             ? ` · 제외 ${excludedDateList.length}일`
             : ''
         }`
+
+      setAppliedOptions({
+        startDate,
+        endDate,
+        description,
+      })
+      setImageUrls(
+        productImages.reduce<Record<string, string>>((result, row) => {
+          const modelName = normalizeModelName(row.model_name)
+          if (modelName && row.image_url && !result[modelName]) {
+            result[modelName] = row.image_url
+          }
+          return result
+        }, {})
       )
     } catch (error: any) {
       console.error(error)
@@ -335,6 +363,132 @@ export function ReorderRecommendationsManager() {
     if (nextPage < 1 || nextPage > totalPages) return
     setCurrentPage(nextPage)
     setSelectedModel('')
+  }
+
+  async function writeImageWorkbook(
+    rows: Record<string, string | number>[],
+    fileName: string
+  ) {
+    if (rows.length === 0) {
+      window.alert('다운로드할 발주추천 데이터가 없습니다.')
+      return
+    }
+
+    setExporting(true)
+
+    try {
+      const templateResponse = await fetch('/excel/order-sheet-template.xlsm')
+
+      if (!templateResponse.ok) {
+        throw new Error('엑셀 이미지 템플릿을 불러오지 못했습니다.')
+      }
+
+      const templateBuffer = await templateResponse.arrayBuffer()
+      const workbook = XLSX.read(templateBuffer, {
+        type: 'array',
+        bookVBA: true,
+      })
+      const worksheetName = workbook.SheetNames[0]
+      const worksheet = XLSX.utils.json_to_sheet(rows)
+
+      worksheet['!cols'] = [
+        { wch: 42 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 24 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 18 },
+      ]
+
+      workbook.Sheets[worksheetName] = worksheet
+      XLSX.writeFile(workbook, getSafeFileName(fileName), {
+        bookType: 'xlsm',
+      })
+    } catch (error: any) {
+      console.error(error)
+      window.alert(
+        `엑셀 다운로드에 실패했습니다.\n\n${
+          error?.message || '알 수 없는 오류'
+        }`
+      )
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function exportAllModels() {
+    const rows = models.map((row) => ({
+      이미지URL: imageUrls[normalizeModelName(row.model)] || '',
+      썸네일: '',
+      모델명: row.model,
+      분석조건: appliedOptions.description,
+      입고기준: getInboundBasisLabel(row.inboundBasis),
+      기준입고일:
+        row.firstInboundDate === row.lastInboundDate
+          ? row.firstInboundDate
+          : `${row.firstInboundDate}~${row.lastInboundDate}`,
+      판매일수: row.analysisDays,
+      입고수량: row.inboundQty,
+      기간출고수량: row.outboundQty,
+      일판매수량: Number(row.dailyAverageQty.toFixed(1)),
+      현재고: row.currentStockQty,
+      소진율: Number((row.depletionRate / 100).toFixed(4)),
+      예상판매수량: row.expectedSalesQty,
+      추천발주수량: row.recommendedQty,
+      SKU수: row.skuCount,
+    }))
+
+    await writeImageWorkbook(
+      rows,
+      `발주추천_전체_${appliedOptions.startDate}_${appliedOptions.endDate}.xlsm`
+    )
+  }
+
+  async function exportSelectedModel() {
+    if (!selectedModelRow) {
+      window.alert('상세목록을 다운로드할 모델을 먼저 선택해 주세요.')
+      return
+    }
+
+    const imageUrl =
+      imageUrls[normalizeModelName(selectedModelRow.model)] || ''
+    const rows = selectedModelRow.skuRows.map((row) => ({
+      이미지URL: imageUrl,
+      썸네일: '',
+      모델명: selectedModelRow.model,
+      SKU: row.sku,
+      분석조건: appliedOptions.description,
+      입고기준: getInboundBasisLabel(selectedModelRow.inboundBasis),
+      색상코드: row.colorCode,
+      색상명: row.colorName,
+      사이즈: row.size,
+      기준입고일:
+        row.firstInboundDate === row.lastInboundDate
+          ? row.firstInboundDate
+          : `${row.firstInboundDate}~${row.lastInboundDate}`,
+      최근출고일: row.lastOutboundDate,
+      입고수량: row.inboundQty,
+      기간출고수량: row.outboundQty,
+      일판매수량: Number(row.dailyAverageQty.toFixed(1)),
+      현재고: row.currentStockQty,
+      소진율: Number((row.depletionRate / 100).toFixed(4)),
+      예상판매수량: row.expectedSalesQty,
+      추천발주수량: row.recommendedQty,
+    }))
+
+    await writeImageWorkbook(
+      rows,
+      `발주추천_상세_${selectedModelRow.model}_${appliedOptions.startDate}_${appliedOptions.endDate}.xlsm`
+    )
   }
 
   useEffect(() => {
@@ -451,12 +605,11 @@ export function ReorderRecommendationsManager() {
           <p className="text-sm font-semibold text-gray-900">적용 기준</p>
         </div>
         <p className="mt-2 text-xs leading-5 text-gray-600">
-          {appliedDescription || '조건을 적용하고 있습니다.'}
+          {appliedOptions.description || '조건을 적용하고 있습니다.'}
         </p>
         <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
           <span>최신 입고 데이터 {formatDate(dataDates.inbound)}</span>
-          <span>기간 판매 데이터 {formatDate(dataDates.sales)}</span>
-          <span>CLAIM 데이터 {formatDate(dataDates.claims)}</span>
+          <span>기간 출고 데이터 {formatDate(dataDates.sales)}</span>
           <span>현재고 {formatDate(dataDates.stock)}</span>
         </div>
       </section>
@@ -467,7 +620,7 @@ export function ReorderRecommendationsManager() {
         </section>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-xs font-medium text-gray-500">추천 모델</p>
           <p className="mt-2 text-2xl font-bold text-red-700">
@@ -481,21 +634,9 @@ export function ReorderRecommendationsManager() {
           </p>
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">기간 판매수량</p>
+          <p className="text-xs font-medium text-gray-500">기간 출고수량</p>
           <p className="mt-2 text-2xl font-bold text-blue-700">
-            {formatNumber(totals.salesQty)}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5 shadow-sm">
-          <p className="text-xs font-medium text-orange-600">CLAIM 차감</p>
-          <p className="mt-2 text-2xl font-bold text-orange-700">
-            -{formatNumber(totals.claimQty)}
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">기간 순판매</p>
-          <p className="mt-2 text-2xl font-bold text-blue-700">
-            {formatNumber(totals.netSalesQty)}
+            {formatNumber(totals.outboundQty)}
           </p>
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -513,7 +654,7 @@ export function ReorderRecommendationsManager() {
       </section>
 
       <section className="rounded-2xl border bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b p-5 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h2 className="font-semibold text-gray-900">
               추가 발주 필요 모델
@@ -523,19 +664,41 @@ export function ReorderRecommendationsManager() {
               있습니다.
             </p>
           </div>
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="모델명 또는 SKU 검색"
-              className="pl-9"
-            />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="모델명 또는 SKU 검색"
+                className="pl-9"
+              />
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading || exporting || models.length === 0}
+              onClick={() => void exportAllModels()}
+            >
+              <Download className="h-4 w-4" />
+              전체목록 엑셀
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading || exporting || !selectedModelRow}
+              onClick={() => void exportSelectedModel()}
+            >
+              <Download className="h-4 w-4" />
+              상세목록 엑셀
+            </Button>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1480px] border-collapse text-sm">
+          <table className="w-full min-w-[1320px] border-collapse text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-gray-600">
                 <th className="p-3 text-center font-medium">NO</th>
@@ -544,9 +707,7 @@ export function ReorderRecommendationsManager() {
                 <th className="p-3 text-center font-medium">기준 입고일</th>
                 <th className="p-3 text-center font-medium">판매일수</th>
                 <th className="p-3 text-right font-medium">입고수량</th>
-                <th className="p-3 text-right font-medium">기간 판매</th>
-                <th className="p-3 text-right font-medium">CLAIM</th>
-                <th className="p-3 text-right font-medium">순판매</th>
+                <th className="p-3 text-right font-medium">기간 출고</th>
                 <th className="p-3 text-right font-medium">일판매</th>
                 <th className="p-3 text-right font-medium">현재고</th>
                 <th className="p-3 text-center font-medium">소진율</th>
@@ -558,13 +719,13 @@ export function ReorderRecommendationsManager() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={15} className="p-12 text-center text-gray-500">
-                    선택한 기간의 입고·판매·CLAIM·현재고를 분석하고 있습니다.
+                  <td colSpan={13} className="p-12 text-center text-gray-500">
+                    선택한 기간의 입고·출고·현재고를 분석하고 있습니다.
                   </td>
                 </tr>
               ) : pagedModels.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="p-12 text-center text-gray-500">
+                  <td colSpan={13} className="p-12 text-center text-gray-500">
                     조건에 해당하는 발주추천 모델이 없습니다.
                   </td>
                 </tr>
@@ -603,13 +764,7 @@ export function ReorderRecommendationsManager() {
                         {formatNumber(row.inboundQty)}
                       </td>
                       <td className="p-3 text-right font-semibold text-blue-700">
-                        {formatNumber(row.salesQty)}
-                      </td>
-                      <td className="p-3 text-right font-semibold text-orange-700">
-                        -{formatNumber(row.claimQty)}
-                      </td>
-                      <td className="p-3 text-right font-semibold text-blue-700">
-                        {formatNumber(row.netSalesQty)}
+                        {formatNumber(row.outboundQty)}
                       </td>
                       <td className="p-3 text-right">
                         {formatDecimal(row.dailyAverageQty)}
@@ -675,17 +830,31 @@ export function ReorderRecommendationsManager() {
       {selectedModelRow && (
         <section className="rounded-2xl border border-blue-200 bg-white shadow-sm">
           <div className="border-b border-blue-100 bg-blue-50 p-5">
-            <h2 className="text-lg font-bold text-gray-900">
-              {selectedModelRow.model} SKU별 발주 계산
-            </h2>
-            <p className="mt-1 text-xs text-gray-500">
-              모델 전체가 아니라 SKU별 예상 판매량에서 SKU별 현재고를
-              차감한 뒤 합산합니다.
-            </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {selectedModelRow.model} SKU별 발주 계산
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  모델 전체가 아니라 SKU별 예상 판매량에서 SKU별 현재고를
+                  차감한 뒤 합산합니다.
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={exporting}
+                onClick={() => void exportSelectedModel()}
+              >
+                <Download className="h-4 w-4" />
+                선택 모델 상세 엑셀
+              </Button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1400px] border-collapse text-sm">
+            <table className="w-full min-w-[1260px] border-collapse text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-gray-600">
                   <th className="p-3 text-left font-medium">SKU</th>
@@ -694,9 +863,7 @@ export function ReorderRecommendationsManager() {
                   <th className="p-3 text-center font-medium">기준 입고일</th>
                   <th className="p-3 text-center font-medium">최근 출고일</th>
                   <th className="p-3 text-right font-medium">입고수량</th>
-                  <th className="p-3 text-right font-medium">기간 판매</th>
-                  <th className="p-3 text-right font-medium">CLAIM</th>
-                  <th className="p-3 text-right font-medium">순판매</th>
+                  <th className="p-3 text-right font-medium">기간 출고</th>
                   <th className="p-3 text-right font-medium">일판매</th>
                   <th className="p-3 text-right font-medium">현재고</th>
                   <th className="p-3 text-center font-medium">소진율</th>
@@ -731,13 +898,7 @@ export function ReorderRecommendationsManager() {
                       {formatNumber(row.inboundQty)}
                     </td>
                     <td className="p-3 text-right font-medium text-blue-700">
-                      {formatNumber(row.salesQty)}
-                    </td>
-                    <td className="p-3 text-right font-medium text-orange-700">
-                      -{formatNumber(row.claimQty)}
-                    </td>
-                    <td className="p-3 text-right font-medium text-blue-700">
-                      {formatNumber(row.netSalesQty)}
+                      {formatNumber(row.outboundQty)}
                     </td>
                     <td className="p-3 text-right">
                       {formatDecimal(row.dailyAverageQty)}
@@ -770,12 +931,8 @@ export function ReorderRecommendationsManager() {
           가까운 입고일을 사용합니다.
         </p>
         <p>
-          SKU 순판매수량 = 기간 SKU 판매수량 - 같은 기간의 전체 CLAIM
-          수량
-        </p>
-        <p>
-          SKU 예상 판매량 = SKU 순판매수량 ÷ 판매일수 × 향후 예상 판매일수
-          × 발주 적용률
+          SKU 예상 판매량 = 기간 SKU 출고수량 ÷ 판매일수 × 향후 예상
+          판매일수 × 발주 적용률
         </p>
         <p>
           SKU 추천 발주수량 = MAX(SKU 예상 판매량 - 최신 SKU 현재고, 0)
