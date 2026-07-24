@@ -57,7 +57,7 @@ const sections = [
     items: [
       { title: '재고관리', href: '/inventory', icon: Boxes, desc: '창고별 SKU 재고 관리' },
       { title: '입고이력', href: '/inbound-history', icon: Package, desc: 'SKU별 입고일자와 입고수량 조회' },
-      { title: '발주추천', href: '/reorder-recommendations', icon: FileCog, desc: '입고·출고·현재고 기반 추가 발주 모델 분석' },
+      { title: '발주추천', href: '/reorder-recommendations', icon: FileCog, desc: '시즌 기간 판매속도 기반 SKU별 발주추천 및 엑셀 출력' },
       //{ title: '재고 등록/수정', href: '/inventory-adjustments', icon: PackageCheck, desc: '재고 등록/수정' },
       { title: '창고관리', href: '/warehouses', icon: Warehouse, desc: '재고 반영 창고 관리' },
     ],
