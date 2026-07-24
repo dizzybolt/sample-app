@@ -133,7 +133,7 @@ export function ReorderRecommendationsManager() {
   const [depletionThreshold, setDepletionThreshold] = useState(
     String(REORDER_DEPLETION_THRESHOLD)
   )
-  const [dayBasis, setDayBasis] = useState<ReorderDayBasis>('active')
+  const [dayBasis, setDayBasis] = useState<ReorderDayBasis>('calendar')
   const [excludedDates, setExcludedDates] = useState('')
   const [appliedOptions, setAppliedOptions] = useState<AppliedOptions>({
     startDate: defaultRange.startDate,
