@@ -109,7 +109,7 @@ export function ReorderRecommendationsManager() {
   const [currentPage, setCurrentPage] = useState(1)
   const [startDate, setStartDate] = useState(defaultRange.startDate)
   const [endDate, setEndDate] = useState(defaultRange.endDate)
-  const [targetDays, setTargetDays] = useState('60')
+  const [targetDays, setTargetDays] = useState('30')
   const [applicationRate, setApplicationRate] = useState('100')
   const [depletionThreshold, setDepletionThreshold] = useState(
     String(REORDER_DEPLETION_THRESHOLD)
