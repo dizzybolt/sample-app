@@ -25,6 +25,10 @@ import {
   type ReorderStockRow,
 } from '@/lib/ops/reorder'
 import { getDefaultInboundRange } from '@/lib/ops/inbound'
+import {
+  fetchProductImageMap,
+  normalizeModelName,
+} from '@/lib/product-images'
 
 const FETCH_CHUNK_SIZE = 1000
 const MODEL_PAGE_SIZE = 30
@@ -39,11 +43,6 @@ type DateRange = {
   column: string
   startDate?: string
   endDate?: string
-}
-
-type ReorderProductImageRow = {
-  model_name: string
-  image_url: string | null
 }
 
 type AppliedOptions = {
@@ -110,10 +109,6 @@ function parseExcludedDates(value: string) {
   )
 }
 
-function normalizeModelName(value?: string | null) {
-  return String(value || '').trim().toUpperCase().replace(/\s+/g, '')
-}
-
 function getSafeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_')
 }
@@ -171,6 +166,32 @@ export function ReorderRecommendationsManager() {
     const from = (currentPage - 1) * MODEL_PAGE_SIZE
     return filteredModels.slice(from, from + MODEL_PAGE_SIZE)
   }, [currentPage, filteredModels])
+
+  useEffect(() => {
+    if (pagedModels.length === 0) {
+      setImageUrls({})
+      return
+    }
+
+    let cancelled = false
+
+    void fetchProductImageMap(
+      supabase,
+      pagedModels.map((row) => ({ modelName: row.model })),
+      { modelOnly: true }
+    )
+      .then((imageMap) => {
+        if (!cancelled) setImageUrls(Object.fromEntries(imageMap))
+      })
+      .catch((error) => {
+        console.error(error)
+        if (!cancelled) setImageUrls({})
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [pagedModels, supabase])
   const selectedModelRow = useMemo(
     () => models.find((row) => row.model === selectedModel) || null,
     [models, selectedModel]
@@ -251,7 +272,7 @@ export function ReorderRecommendationsManager() {
     setErrorMessage('')
 
     try {
-      const [inboundRows, salesRows, allStockRows, productImages] =
+      const [inboundRows, salesRows, allStockRows] =
         await Promise.all([
         fetchAllRows<ReorderInboundRow>(
           'ops_inbound_history',
@@ -272,11 +293,6 @@ export function ReorderRecommendationsManager() {
           'ops_stock_snapshot',
           'snapshot_date, sku, qty',
           'snapshot_date'
-        ),
-        fetchAllRows<ReorderProductImageRow>(
-          'product_images',
-          'model_name, image_url',
-          'model_name'
         ),
       ])
 
@@ -331,15 +347,6 @@ export function ReorderRecommendationsManager() {
         endDate,
         description,
       })
-      setImageUrls(
-        productImages.reduce<Record<string, string>>((result, row) => {
-          const modelName = normalizeModelName(row.model_name)
-          if (modelName && row.image_url && !result[modelName]) {
-            result[modelName] = row.image_url
-          }
-          return result
-        }, {})
-      )
     } catch (error: any) {
       console.error(error)
       setModels([])

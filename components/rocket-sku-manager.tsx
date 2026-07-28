@@ -6,6 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
+import {
+  fetchProductImageMap,
+  getImageTarget,
+  resolveProductImage,
+} from '@/lib/product-images'
 
 type RocketSkuPrice = {
   id: string
@@ -18,11 +23,6 @@ type RocketSkuPrice = {
   note: string | null
   created_at: string | null
   updated_at: string | null
-}
-
-type ProductImage = {
-  model_name: string
-  image_url: string | null
 }
 
 type RocketSkuForm = {
@@ -64,7 +64,7 @@ export function RocketSkuManager() {
   const supabase = createClient()
 
   const [items, setItems] = useState<RocketSkuPrice[]>([])
-  const [images, setImages] = useState<ProductImage[]>([])
+  const [images, setImages] = useState<Map<string, string>>(new Map())
   
   const [currentPage, setCurrentPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
@@ -139,22 +139,24 @@ export function RocketSkuManager() {
     )
 
     if (modelNames.length === 0) {
-      setImages([])
+      setImages(new Map())
       return
     }
 
-    const { data, error } = await supabase
-      .from('product_images')
-      .select('model_name, image_url')
-      .in('model_name', modelNames)
-
-    if (error) {
+    try {
+      setImages(
+        await fetchProductImageMap(
+          supabase,
+          nextItems.map((item) => ({
+            modelName: item.model_name || getModelFromSku(item.sku),
+            sku: item.sku,
+          }))
+        )
+      )
+    } catch (error) {
       console.error(error)
-      setImages([])
-      return
+      setImages(new Map())
     }
-
-    setImages((data || []) as ProductImage[])
   }
 
   function resetForm() {
@@ -240,9 +242,11 @@ export function RocketSkuManager() {
     }
   }
 
-  function getImage(modelName?: string | null) {
-    if (!modelName) return null
-    return images.find((item) => item.model_name === modelName)?.image_url || null
+  function getImage(item: RocketSkuPrice) {
+    return resolveProductImage(images, {
+      modelName: item.model_name || getModelFromSku(item.sku),
+      sku: item.sku,
+    })
   }
 
   const filteredItems = items
@@ -256,7 +260,10 @@ export function RocketSkuManager() {
       ? prevItem.model_name || getModelFromSku(prevItem.sku)
       : null
 
-    return modelName !== prevModelName
+    return (
+      getImageTarget({ modelName, sku: item.sku }).imageKey !==
+      getImageTarget({ modelName: prevModelName, sku: prevItem?.sku }).imageKey
+    )
   }
 
   async function handleUploadExcel(file: File) {
@@ -588,7 +595,7 @@ export function RocketSkuManager() {
               ) : (
                 filteredItems.map((item, index) => {
                   const modelName = item.model_name || getModelFromSku(item.sku)
-                  const imageUrl = getImage(modelName)
+                  const imageUrl = getImage(item)
                   const showImage = shouldShowModelImage(item, index)
 
                   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
@@ -603,6 +610,10 @@ export function RocketSkuManager() {
                             <img
                               src={imageUrl}
                               alt={modelName}
+                              loading="lazy"
+                              decoding="async"
+                              width={56}
+                              height={56}
                               className="mx-auto h-12 w-12 rounded border object-cover"
                             />
                           ) : (

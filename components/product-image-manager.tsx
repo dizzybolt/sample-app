@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
 import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
-const pageSize = 100
+const pageSize = 50
 
 export function ProductImageManager() {
   const supabase = createClient()
@@ -17,6 +17,8 @@ export function ProductImageManager() {
   const [images, setImages] = useState<ProductImage[]>([])
 
   const [modelName, setModelName] = useState('')
+  const [colorCode, setColorCode] = useState('')
+  const [imageScope, setImageScope] = useState<'MODEL' | 'COLOR'>('MODEL')
   const [imageUrl, setImageUrl] = useState('')
   const [fileName, setFileName] = useState('')
   const [ftpPath, setFtpPath] = useState('')
@@ -70,6 +72,8 @@ export function ProductImageManager() {
     setEditingId(null)
 
     setModelName('')
+    setColorCode('')
+    setImageScope('MODEL')
     setImageUrl('')
     setFileName('')
     setFtpPath('')
@@ -80,6 +84,8 @@ export function ProductImageManager() {
     setEditingId(item.id)
 
     setModelName(item.model_name || '')
+    setColorCode(item.color_code || '')
+    setImageScope(item.image_scope || 'MODEL')
     setImageUrl(item.image_url || '')
     setFileName(item.file_name || '')
     setFtpPath(item.ftp_path || '')
@@ -97,10 +103,25 @@ export function ProductImageManager() {
       return
     }
 
+    const normalizedModelName = modelName.trim().toUpperCase()
+    const normalizedColorCode = colorCode.trim().padStart(2, '0')
+
+    if (imageScope === 'COLOR' && !/^\d{2}$/.test(normalizedColorCode)) {
+      alert('컬러 이미지는 두 자리 컬러코드를 입력해 주세요.')
+      return
+    }
+
     setIsSaving(true)
 
     const payload = {
-      model_name: modelName.trim(),
+      model_name: normalizedModelName,
+      color_code: imageScope === 'COLOR' ? normalizedColorCode : null,
+      image_key:
+        imageScope === 'COLOR'
+          ? `${normalizedModelName}_${normalizedColorCode}`
+          : normalizedModelName,
+      image_scope: imageScope,
+      image_size: 1000,
       image_url: imageUrl.trim(),
 
       file_name: fileName.trim() || null,
@@ -175,14 +196,32 @@ async function handleUploadExcel(file: File) {
     .map((row) => {
       const modelName = String(row.모델명 || row.model_name || '').trim()
       const imageUrl = String(row.URL || row.image_url || '').trim()
+      const colorCode = String(row.컬러코드 || row.color_code || '').trim()
+      const imageScope = String(
+        row.이미지구분 || row.image_scope || (colorCode ? 'COLOR' : 'MODEL')
+      ).toUpperCase()
       const fileName = String(row.파일명 || row.file_name || '').trim()
       const ftpPath = String(row.FTP경로 || row.ftp_path || '').trim()
       const memo = String(row.비고 || row.memo || '').trim()
 
-      if (!modelName || !imageUrl) return null
+      if (
+        !modelName ||
+        !imageUrl ||
+        !['MODEL', 'COLOR'].includes(imageScope) ||
+        (imageScope === 'COLOR' && !/^\d{2}$/.test(colorCode))
+      ) {
+        return null
+      }
 
       return {
-        model_name: modelName,
+        model_name: modelName.toUpperCase(),
+        color_code: imageScope === 'COLOR' ? colorCode : null,
+        image_key:
+          imageScope === 'COLOR'
+            ? `${modelName.toUpperCase()}_${colorCode}`
+            : modelName.toUpperCase(),
+        image_scope: imageScope,
+        image_size: 1000,
         image_url: imageUrl,
         file_name: fileName || null,
         ftp_path: ftpPath || null,
@@ -195,7 +234,7 @@ async function handleUploadExcel(file: File) {
 
       const uniqueRows = Array.from(
         new Map(
-          uploadRows.map((row) => [row!.model_name, row])
+          uploadRows.map((row) => [row!.ftp_path || row!.image_url, row])
         ).values()
       )
 
@@ -218,7 +257,7 @@ async function handleUploadExcel(file: File) {
     supabase,
     tableName: 'product_images',
     rows: uniqueRows,
-    onConflict: 'model_name',
+    onConflict: 'ftp_path',
     chunkSize: 500,
     onProgress: setUploadProgress,
   })
@@ -240,6 +279,9 @@ async function handleUploadExcel(file: File) {
   function downloadExcel() {
     const rows = images.map((item) => ({
       모델명: item.model_name,
+      컬러코드: item.color_code || '',
+      이미지구분: item.image_scope,
+      이미지키: item.image_key,
       URL: item.image_url,
       파일명: item.file_name || '',
       FTP경로: item.ftp_path || '',
@@ -287,7 +329,7 @@ async function handleUploadExcel(file: File) {
           등록 / 수정
         </h2>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-7">
 
           <Input
             value={modelName}
@@ -295,6 +337,27 @@ async function handleUploadExcel(file: File) {
               setModelName(e.target.value)
             }
             placeholder="모델명"
+          />
+
+          <select
+            value={imageScope}
+            onChange={(event) => {
+              const nextScope = event.target.value as 'MODEL' | 'COLOR'
+              setImageScope(nextScope)
+              if (nextScope === 'MODEL') setColorCode('')
+            }}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="MODEL">모델 이미지</option>
+            <option value="COLOR">컬러 이미지</option>
+          </select>
+
+          <Input
+            value={colorCode}
+            onChange={(event) => setColorCode(event.target.value)}
+            placeholder="컬러코드(00)"
+            maxLength={2}
+            disabled={imageScope === 'MODEL'}
           />
 
           <Input
@@ -436,6 +499,14 @@ async function handleUploadExcel(file: File) {
                 </th>
 
                 <th className="p-3">
+                  구분
+                </th>
+
+                <th className="p-3">
+                  컬러
+                </th>
+
+                <th className="p-3">
                   URL
                 </th>
 
@@ -456,13 +527,25 @@ async function handleUploadExcel(file: File) {
                   <td className="p-3">
                     <img
                       src={item.image_url}
-                      alt=""
+                      alt={item.image_key}
+                      loading="lazy"
+                      decoding="async"
+                      width={64}
+                      height={64}
                       className="h-16 w-16 rounded border object-cover"
                     />
                   </td>
 
                   <td className="p-3">
                     {item.model_name}
+                  </td>
+
+                  <td className="p-3 text-center">
+                    {item.image_scope}
+                  </td>
+
+                  <td className="p-3 text-center">
+                    {item.color_code || '-'}
                   </td>
 
                   <td className="p-3">

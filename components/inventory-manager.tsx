@@ -3,7 +3,7 @@
 import * as XLSX from 'xlsx'
 import { useEffect, useMemo, useState, Fragment } from 'react' // 🟢 Fragment import 추가
 import { createClient } from '@/lib/supabase/client'
-import type { Inventory, InventoryLog, Warehouse, SkuMapping, ProductImage } from '@/lib/types'
+import type { Inventory, InventoryLog, Warehouse, SkuMapping } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -14,6 +14,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
+import {
+  fetchProductImageMap,
+  getImageTarget,
+  resolveProductImage,
+} from '@/lib/product-images'
 
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString('ko-KR')
@@ -52,7 +57,9 @@ export function InventoryManager() {
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([])
 
   const [skuMappings, setSkuMappings] = useState<SkuMapping[]>([])
-  const [productImages, setProductImages] = useState<ProductImage[]>([])
+  const [productImages, setProductImages] = useState<Map<string, string>>(
+    new Map()
+  )
   const [opsStocks, setOpsStocks] = useState<any[]>([])
 
   useEffect(() => {
@@ -203,7 +210,7 @@ export function InventoryManager() {
 
     if (skus.length === 0) {
       setSkuMappings([])
-      setProductImages([])
+      setProductImages(new Map())
       return
     }
 
@@ -220,16 +227,25 @@ export function InventoryManager() {
     )
 
     if (modelNames.length === 0) {
-      setProductImages([])
+      setProductImages(new Map())
       return
     }
 
-    const { data: imageData } = await supabase
-      .from('product_images')
-      .select('*')
-      .in('model_name', modelNames)
-
-    setProductImages((imageData || []) as ProductImage[])
+    try {
+      setProductImages(
+        await fetchProductImageMap(
+          supabase,
+          mappings.map((item) => ({
+            modelName: item.model_name,
+            colorCode: item.color_code,
+            sku: item.sku,
+          }))
+        )
+      )
+    } catch (error) {
+      console.error(error)
+      setProductImages(new Map())
+    }
   }
 
   const filteredInventories = useMemo(() => {
@@ -293,9 +309,12 @@ export function InventoryManager() {
       .reduce((sum, item) => sum + Number(item.qty || 0), 0)
   }
 
-  function getProductImage(modelName?: string | null) {
-    if (!modelName) return null
-    return productImages.find((item) => item.model_name === modelName)
+  function getProductImage(item: Inventory, mapping?: SkuMapping | null) {
+    return resolveProductImage(productImages, {
+      modelName: mapping?.model_name,
+      colorCode: mapping?.color_code,
+      sku: item.sku,
+    })
   }
 
   function shouldShowModelImage(item: Inventory, index: number) {
@@ -303,7 +322,18 @@ export function InventoryManager() {
     const prevItem = filteredInventories[index - 1]
     const prevMapping = prevItem ? getSkuMapping(prevItem.sku) : null
 
-    return mapping?.model_name !== prevMapping?.model_name
+    return (
+      getImageTarget({
+        modelName: mapping?.model_name,
+        colorCode: mapping?.color_code,
+        sku: item.sku,
+      }).imageKey !==
+      getImageTarget({
+        modelName: prevMapping?.model_name,
+        colorCode: prevMapping?.color_code,
+        sku: prevItem?.sku,
+      }).imageKey
+    )
   }
 
   function handleEditInventory(item: Inventory) {
@@ -956,7 +986,7 @@ export function InventoryManager() {
                   const isLogOpen = selectedLogSku === item.sku
 
                   const mapping = getSkuMapping(item.sku)
-                  const image = getProductImage(mapping?.model_name)
+                  const imageUrl = getProductImage(item, mapping)
                   const showImage = shouldShowModelImage(item, index)
 
                   return (
@@ -968,11 +998,15 @@ export function InventoryManager() {
 
                         <td className="p-3 text-center">
                           {showImage ? (
-                            image?.image_url ? (
+                            imageUrl ? (
                               <img
-                                src={image.image_url}
+                                src={imageUrl}
                                 alt={mapping?.model_name || item.sku}
-                                className="mx-auto h-14 w-14 rounded border object-cover" // 👈 이 부분
+                                loading="lazy"
+                                decoding="async"
+                                width={56}
+                                height={56}
+                                className="mx-auto h-14 w-14 rounded border object-cover"
                               />
                             ) : (
                               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded border bg-gray-50 text-[10px] text-gray-400">

@@ -438,6 +438,10 @@ export interface ProductImage {
   id: string
 
   model_name: string
+  color_code?: string | null
+  image_key: string
+  image_scope: 'MODEL' | 'COLOR'
+  image_size: number
   image_url: string
 
   file_name?: string | null
