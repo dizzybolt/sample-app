@@ -31,6 +31,10 @@ import {
   type NetSalesSummaryRow,
   type OpsClaimRow,
 } from '@/lib/ops/claims'
+import {
+  fetchProductImageMap,
+  resolveProductImage,
+} from '@/lib/product-images'
 
 const supabase = createClient()
 
@@ -82,6 +86,7 @@ export function SalesStatsManager() {
 
   const [rocketAmount, setRocketAmount] = useState(0)
   const [rocketQty, setRocketQty] = useState(0)
+  const [imageUrls, setImageUrls] = useState<Map<string, string>>(new Map())
 
   async function loadData() {
     setLoading(true)
@@ -405,6 +410,32 @@ export function SalesStatsManager() {
     [rows, claimRows, skuSortKey]
   )
 
+  useEffect(() => {
+    const targets = [
+      ...modelTop.map((item) => ({ modelName: item.label })),
+      ...skuTop.map((item) => ({ sku: item.label })),
+    ]
+
+    if (targets.length === 0) {
+      setImageUrls(new Map())
+      return
+    }
+
+    let cancelled = false
+    void fetchProductImageMap(supabase, targets)
+      .then((imageMap) => {
+        if (!cancelled) setImageUrls(imageMap)
+      })
+      .catch((error) => {
+        console.error('주문통계 이미지 조회 실패:', error)
+        if (!cancelled) setImageUrls(new Map())
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [modelTop, skuTop])
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -635,6 +666,10 @@ export function SalesStatsManager() {
             formatNumber(item.netAmount),
             formatNumber(Math.round(item.avgNetAmount)),
           ])}
+          imageUrls={modelTop.map(
+            (item) =>
+              resolveProductImage(imageUrls, { modelName: item.label }) || ''
+          )}
         />
 
         <SummaryTable
@@ -659,6 +694,9 @@ export function SalesStatsManager() {
             formatNumber(item.netAmount),
             formatNumber(Math.round(item.avgNetAmount)),
           ])}
+          imageUrls={skuTop.map(
+            (item) => resolveProductImage(imageUrls, { sku: item.label }) || ''
+          )}
         />
       </section>
     </div>
@@ -782,13 +820,14 @@ function SummaryTable({
   rows,
   sortKey,
   onSortKeyChange,
+  imageUrls,
 }: {
   title: string
   headers: string[]
   rows: string[][]
   sortKey: SortKey
   onSortKeyChange: (key: SortKey) => void
-
+  imageUrls?: string[]
 }) {
   return (
     <section className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -811,6 +850,7 @@ function SummaryTable({
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="border-b bg-gray-50">
+              {imageUrls && <th className="p-3 text-center">이미지</th>}
               {headers.map((header, index) => (
                 <th
                   key={header}
@@ -825,13 +865,35 @@ function SummaryTable({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={headers.length} className="p-6 text-center text-gray-500">
+                <td
+                  colSpan={headers.length + (imageUrls ? 1 : 0)}
+                  className="p-6 text-center text-gray-500"
+                >
                   표시할 데이터가 없습니다.
                 </td>
               </tr>
             ) : (
               rows.map((row, rowIndex) => (
                 <tr key={rowIndex} className="border-b last:border-0">
+                  {imageUrls && (
+                    <td className="p-2 text-center">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border bg-gray-50">
+                        {imageUrls[rowIndex] ? (
+                          <img
+                            src={imageUrls[rowIndex]}
+                            alt={row[0]}
+                            loading="lazy"
+                            decoding="async"
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-[10px] text-gray-400">
+                            이미지 없음
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  )}
                   {row.map((cell, cellIndex) => (
                     <td
                       key={cellIndex}

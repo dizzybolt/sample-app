@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ListPagination } from '@/components/list-pagination'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
 import {
   fetchProductImageMap,
@@ -529,11 +530,17 @@ export function RocketSkuManager() {
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-semibold text-gray-900">로켓SKU 목록</h2>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="text-sm text-gray-500">
               총 {totalCount.toLocaleString()}건
             </p>
+            <ListPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              disabled={isSaving}
+            />
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -667,44 +674,6 @@ export function RocketSkuManager() {
               )}
             </tbody>
           </table>
-        </div>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-500">
-            {totalCount === 0
-              ? '0건'
-              : `${((currentPage - 1) * PAGE_SIZE + 1).toLocaleString()}~${Math.min(
-                  currentPage * PAGE_SIZE,
-                  totalCount
-                ).toLocaleString()} / ${totalCount.toLocaleString()}건`}
-          </p>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={currentPage <= 1 || isSaving}
-              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-            >
-              이전
-            </Button>
-
-            <span className="min-w-[90px] text-center text-sm">
-              {currentPage} / {totalPages}
-            </span>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= totalPages || isSaving}
-              onClick={() =>
-                setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-              }
-            >
-              다음
-            </Button>
-          </div>
         </div>
       </section>
     </div>

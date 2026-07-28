@@ -28,7 +28,9 @@ import { getDefaultInboundRange } from '@/lib/ops/inbound'
 import {
   fetchProductImageMap,
   normalizeModelName,
+  resolveProductImage,
 } from '@/lib/product-images'
+import { ListPagination } from '@/components/list-pagination'
 
 const FETCH_CHUNK_SIZE = 1000
 const MODEL_PAGE_SIZE = 30
@@ -175,11 +177,18 @@ export function ReorderRecommendationsManager() {
 
     let cancelled = false
 
-    void fetchProductImageMap(
-      supabase,
-      pagedModels.map((row) => ({ modelName: row.model })),
-      { modelOnly: true }
-    )
+    const targets = pagedModels.flatMap((row) => [
+      { modelName: row.model },
+      ...(row.model === selectedModel
+        ? row.skuRows.map((skuRow) => ({
+            modelName: row.model,
+            colorCode: skuRow.colorCode,
+            sku: skuRow.sku,
+          }))
+        : []),
+    ])
+
+    void fetchProductImageMap(supabase, targets)
       .then((imageMap) => {
         if (!cancelled) setImageUrls(Object.fromEntries(imageMap))
       })
@@ -191,7 +200,7 @@ export function ReorderRecommendationsManager() {
     return () => {
       cancelled = true
     }
-  }, [pagedModels, supabase])
+  }, [pagedModels, selectedModel, supabase])
   const selectedModelRow = useMemo(
     () => models.find((row) => row.model === selectedModel) || null,
     [models, selectedModel]
@@ -704,11 +713,25 @@ export function ReorderRecommendationsManager() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3 border-b px-5 py-4">
+          <h2 className="font-semibold text-gray-900">발주 필요 모델</h2>
+          <p className="text-sm text-gray-500">
+            총 {filteredModels.length.toLocaleString()}건
+          </p>
+          <ListPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={movePage}
+            disabled={loading}
+          />
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1320px] border-collapse text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-gray-600">
                 <th className="p-3 text-center font-medium">NO</th>
+                <th className="p-3 text-center font-medium">이미지</th>
                 <th className="p-3 text-left font-medium">모델명</th>
                 <th className="p-3 text-center font-medium">입고 기준</th>
                 <th className="p-3 text-center font-medium">기준 입고일</th>
@@ -726,13 +749,13 @@ export function ReorderRecommendationsManager() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={13} className="p-12 text-center text-gray-500">
+                  <td colSpan={14} className="p-12 text-center text-gray-500">
                     선택한 기간의 입고·출고·현재고를 분석하고 있습니다.
                   </td>
                 </tr>
               ) : pagedModels.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="p-12 text-center text-gray-500">
+                  <td colSpan={14} className="p-12 text-center text-gray-500">
                     조건에 해당하는 발주추천 모델이 없습니다.
                   </td>
                 </tr>
@@ -751,6 +774,12 @@ export function ReorderRecommendationsManager() {
                     >
                       <td className="p-3 text-center text-gray-500">
                         {(currentPage - 1) * MODEL_PAGE_SIZE + index + 1}
+                      </td>
+                      <td className="p-2 text-center">
+                        <ProductThumbnail
+                          src={imageUrls[normalizeModelName(row.model)]}
+                          alt={row.model}
+                        />
                       </td>
                       <td className="whitespace-nowrap p-3 font-semibold text-gray-900">
                         {row.model}
@@ -809,29 +838,6 @@ export function ReorderRecommendationsManager() {
           </table>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t p-4">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPage <= 1 || loading}
-            onClick={() => movePage(currentPage - 1)}
-          >
-            이전
-          </Button>
-          <span className="min-w-20 text-center text-sm text-gray-500">
-            {currentPage} / {totalPages}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPage >= totalPages || loading}
-            onClick={() => movePage(currentPage + 1)}
-          >
-            다음
-          </Button>
-        </div>
       </section>
 
       {selectedModelRow && (
@@ -865,6 +871,7 @@ export function ReorderRecommendationsManager() {
               <thead>
                 <tr className="border-b bg-gray-50 text-gray-600">
                   <th className="p-3 text-left font-medium">SKU</th>
+                  <th className="p-3 text-center font-medium">이미지</th>
                   <th className="p-3 text-center font-medium">색상</th>
                   <th className="p-3 text-center font-medium">사이즈</th>
                   <th className="p-3 text-center font-medium">기준 입고일</th>
@@ -886,6 +893,21 @@ export function ReorderRecommendationsManager() {
                   >
                     <td className="whitespace-nowrap p-3 font-medium text-gray-900">
                       {row.sku}
+                    </td>
+                    <td className="p-2 text-center">
+                      <ProductThumbnail
+                        src={
+                          resolveProductImage(
+                            new Map(Object.entries(imageUrls)),
+                            {
+                              modelName: selectedModelRow.model,
+                              colorCode: row.colorCode,
+                              sku: row.sku,
+                            }
+                          ) || undefined
+                        }
+                        alt={`${selectedModelRow.model}_${row.colorCode}`}
+                      />
                     </td>
                     <td className="whitespace-nowrap p-3 text-center">
                       {row.colorCode || '-'}
@@ -946,6 +968,30 @@ export function ReorderRecommendationsManager() {
           이며, 모델 추천수량은 SKU 추천수량의 합계입니다.
         </p>
       </section>
+    </div>
+  )
+}
+
+function ProductThumbnail({
+  src,
+  alt,
+}: {
+  src?: string
+  alt: string
+}) {
+  return (
+    <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border bg-gray-50">
+      {src ? (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-contain"
+        />
+      ) : (
+        <span className="text-[10px] text-gray-400">이미지 없음</span>
+      )}
     </div>
   )
 }

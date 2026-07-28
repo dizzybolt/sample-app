@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ListPagination } from '@/components/list-pagination'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
 
 const PAGE_SIZE = 50
@@ -60,16 +61,6 @@ function parseModelName(modelName: string) {
     year_code: value.slice(8, 9) || null,
     season_code: value.slice(9, 10) || null,
   }
-}
-
-function getPageNumbers(currentPage: number, totalPages: number) {
-  const first = Math.max(1, Math.min(currentPage - 2, totalPages - 4))
-  const last = Math.min(totalPages, Math.max(5, currentPage + 2))
-
-  return Array.from(
-    { length: Math.max(0, last - first + 1) },
-    (_, index) => first + index
-  )
 }
 
 export function ProductMasterManager() {
@@ -553,12 +544,17 @@ export function ProductMasterManager() {
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-semibold text-gray-900">상품마스터 목록</h2>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="text-sm text-gray-500">
               총 {totalCount.toLocaleString()}개 · {fromNumber.toLocaleString()}–
               {toNumber.toLocaleString()}개 표시
             </p>
+            <ListPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -734,39 +730,6 @@ export function ProductMasterManager() {
           </table>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPage <= 1}
-            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-          >
-            이전
-          </Button>
-          {getPageNumbers(currentPage, totalPages).map((page) => (
-            <Button
-              key={page}
-              type="button"
-              variant={page === currentPage ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setCurrentPage(page)}
-            >
-              {page}
-            </Button>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              setCurrentPage((page) => Math.min(totalPages, page + 1))
-            }
-          >
-            다음
-          </Button>
-        </div>
       </section>
     </div>
   )

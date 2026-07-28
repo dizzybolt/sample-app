@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Inventory, InventoryLog, Warehouse, SkuMapping } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ListPagination } from '@/components/list-pagination'
 import {
   Select,
   SelectContent,
@@ -882,31 +883,11 @@ export function InventoryManager() {
               총 {totalCount.toLocaleString()}건
             </p>
 
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              >
-                이전
-              </Button>
-
-              <span className="text-sm text-gray-500">
-                {currentPage} / {Math.max(1, Math.ceil(totalCount / pageSize))}
-              </span>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={currentPage >= Math.ceil(totalCount / pageSize)}
-                onClick={() => setCurrentPage((prev) => prev + 1)}
-              >
-                다음
-              </Button>
-            </div>
+            <ListPagination
+              currentPage={currentPage}
+              totalPages={Math.ceil(totalCount / pageSize)}
+              onPageChange={setCurrentPage}
+            />
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-[620px]">

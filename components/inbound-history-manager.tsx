@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ListPagination } from '@/components/list-pagination'
 import {
   getCurrentMonthRange,
   getDefaultInboundRange,
@@ -426,31 +427,12 @@ export function InboundHistoryManager() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={currentPage <= 1 || loading}
-              onClick={() => movePage(currentPage - 1)}
-            >
-              이전
-            </Button>
-
-            <span className="min-w-20 text-center text-sm text-gray-500">
-              {currentPage} / {totalPages}
-            </span>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= totalPages || loading}
-              onClick={() => movePage(currentPage + 1)}
-            >
-              다음
-            </Button>
-          </div>
+          <ListPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={movePage}
+            disabled={loading}
+          />
         </div>
 
         <div className="overflow-x-auto">
@@ -526,31 +508,6 @@ export function InboundHistoryManager() {
           </table>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t p-4">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPage <= 1 || loading}
-            onClick={() => movePage(currentPage - 1)}
-          >
-            이전
-          </Button>
-
-          <span className="min-w-20 text-center text-sm text-gray-500">
-            {currentPage} / {totalPages}
-          </span>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPage >= totalPages || loading}
-            onClick={() => movePage(currentPage + 1)}
-          >
-            다음
-          </Button>
-        </div>
       </section>
     </div>
   )

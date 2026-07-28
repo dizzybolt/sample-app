@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { ProductImage } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ListPagination } from '@/components/list-pagination'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
 import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
@@ -463,24 +464,38 @@ async function handleUploadExcel(file: File) {
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
 
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-semibold text-gray-900">이미지 목록</h2>
+            <p className="text-sm text-gray-500">
+              총 {totalCount.toLocaleString()}건
+            </p>
+            <ListPagination
+              currentPage={currentPage}
+              totalPages={totalPage}
+              onPageChange={setCurrentPage}
+              disabled={isSaving || uploading}
+            />
+          </div>
 
-          <Input
-            value={searchTerm}
-            onChange={(e) =>
-              setSearchTerm(e.target.value)
-            }
-            placeholder="검색"
-          />
+          <div className="flex gap-2">
+            <Input
+              value={searchTerm}
+              onChange={(e) =>
+                setSearchTerm(e.target.value)
+              }
+              placeholder="검색"
+            />
 
-          <Button
-            onClick={() => {
-              setCurrentPage(1)
-              searchImages()
-            }}
-          >
-            검색
-          </Button>
+            <Button
+              onClick={() => {
+                setCurrentPage(1)
+                searchImages()
+              }}
+            >
+              검색
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">
