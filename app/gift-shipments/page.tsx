@@ -15,7 +15,7 @@ export default function GiftShipmentsPage() {
           </p>
         </div>
 
-        <OpsDataFreshness />
+        <OpsDataFreshness sources={['sales']} />
       </section>
 
       <GiftShipmentManager />

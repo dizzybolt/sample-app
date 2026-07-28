@@ -13,7 +13,7 @@ export default function ClaimsPage() {
           </p>
         </div>
 
-        <OpsDataFreshness />
+        <OpsDataFreshness sources={['claim']} />
       </section>
 
       <ClaimsManager />

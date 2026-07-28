@@ -12,7 +12,7 @@ export default function InventoryPage() {
             창고별 SKU 재고를 등록하고 수량 변경 이력을 관리합니다.
             </p>
           </div>
-          <OpsDataFreshness />
+          <OpsDataFreshness sources={['stock']} />
         </section>
         <section>
           <InventoryManager />

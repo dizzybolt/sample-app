@@ -14,6 +14,42 @@ type SyncLog = {
   finished_at: string | null
 }
 
+export type OpsDataSource =
+  | 'sales'
+  | 'claim'
+  | 'stock'
+  | 'inbound'
+  | 'images'
+
+type OpsDataSourceConfig = {
+  label: string
+  syncTypes: string[]
+}
+
+const SOURCE_CONFIG: Record<OpsDataSource, OpsDataSourceConfig> = {
+  sales: {
+    label: '출고',
+    // 평상시 갱신되는 RECENT 로그를 우선하고, 없을 때만 초기 ALL 로그를 사용한다.
+    syncTypes: ['sales_daily', 'sales_daily_all'],
+  },
+  claim: {
+    label: '클레임',
+    syncTypes: ['claim_daily', 'claim_daily_all'],
+  },
+  stock: {
+    label: '재고',
+    syncTypes: ['stock_snapshot'],
+  },
+  inbound: {
+    label: '입고',
+    syncTypes: ['inbound_history'],
+  },
+  images: {
+    label: '이미지',
+    syncTypes: ['images'],
+  },
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return '-'
 
@@ -22,7 +58,7 @@ function formatDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) return '-'
 
   return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'UTC',
+    timeZone: 'Asia/Seoul',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -47,34 +83,67 @@ function getStatusClass(log?: SyncLog | null) {
   return 'text-red-600'
 }
 
-export function OpsDataFreshness() {
+export function OpsDataFreshness({
+  sources,
+}: {
+  sources: OpsDataSource[]
+}) {
   const supabase = createClient()
 
-  const [salesLog, setSalesLog] = useState<SyncLog | null>(null)
-  const [stockLog, setStockLog] = useState<SyncLog | null>(null)
+  const [logsBySource, setLogsBySource] = useState<
+    Partial<Record<OpsDataSource, SyncLog | null>>
+  >({})
   const [loading, setLoading] = useState(false)
 
   async function fetchLogs() {
     setLoading(true)
 
-    const { data, error } = await supabase
-      .from('ops_sync_logs')
-      .select('*')
-      .in('sync_type', ['sales_daily_all', 'stock_snapshot'])
-      .order('finished_at', { ascending: false })
-      .limit(20)
+    const syncTypes = Array.from(
+      new Set(
+        sources.flatMap((source) => SOURCE_CONFIG[source].syncTypes)
+      )
+    )
+
+    const results = await Promise.all(
+      syncTypes.map(async (syncType) => {
+        const result = await supabase
+          .from('ops_sync_logs')
+          .select('*')
+          .eq('sync_type', syncType)
+          .order('finished_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        return { syncType, ...result }
+      })
+    )
 
     setLoading(false)
 
-    if (error) {
-      console.error(error)
+    const failedResult = results.find((result) => result.error)
+
+    if (failedResult?.error) {
+      console.error(failedResult.error)
       return
     }
 
-    const logs = (data || []) as SyncLog[]
+    const logs = results
+      .map((result) => result.data as SyncLog | null)
+      .filter((log): log is SyncLog => Boolean(log))
+    const nextLogs: Partial<Record<OpsDataSource, SyncLog | null>> = {}
 
-    setSalesLog(logs.find((item) => item.sync_type === 'sales_daily_all') || null)
-    setStockLog(logs.find((item) => item.sync_type === 'stock_snapshot') || null)
+    sources.forEach((source) => {
+      const config = SOURCE_CONFIG[source]
+
+      nextLogs[source] =
+        config.syncTypes
+          .map((syncType) =>
+            logs.find((item) => item.sync_type === syncType)
+          )
+          .find(Boolean) || null
+    })
+
+    setLogsBySource(nextLogs)
   }
 
   useEffect(() => {
@@ -102,19 +171,23 @@ export function OpsDataFreshness() {
       </div>
 
       <div className="space-y-1 whitespace-nowrap">
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-gray-500">출고</span>
-          <span className={getStatusClass(salesLog)}>
-            {formatDateTime(salesLog?.finished_at)} · {getStatusText(salesLog)}
-          </span>
-        </div>
+        {sources.map((source) => {
+          const log = logsBySource[source]
 
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-gray-500">재고</span>
-          <span className={getStatusClass(stockLog)}>
-            {formatDateTime(stockLog?.finished_at)} · {getStatusText(stockLog)}
-          </span>
-        </div>
+          return (
+            <div
+              key={source}
+              className="flex items-center justify-between gap-4"
+            >
+              <span className="text-gray-500">
+                {SOURCE_CONFIG[source].label}
+              </span>
+              <span className={getStatusClass(log)}>
+                {formatDateTime(log?.finished_at)} · {getStatusText(log)}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Database, RefreshCw, Search, X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,13 +19,6 @@ const TABLE_NAME = 'ops_inbound_history'
 const PAGE_SIZE = 50
 const FETCH_CHUNK_SIZE = 1000
 
-type SyncLog = {
-  status: string
-  success_count: number | null
-  fail_count: number | null
-  finished_at: string | null
-}
-
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString('ko-KR')
 }
@@ -38,38 +31,6 @@ function formatDate(value?: string | null) {
   if (!year || !month || !day) return value
 
   return `${year}.${month}.${day}`
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '동기화 기록 없음'
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) return value
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
-}
-
-function getSyncStatusClass(status?: string | null) {
-  if (status === 'success') return 'text-emerald-600'
-  if (status === 'partial') return 'text-amber-600'
-  if (!status) return 'text-gray-400'
-  return 'text-red-600'
-}
-
-function getSyncStatusText(status?: string | null) {
-  if (status === 'success') return '정상'
-  if (status === 'partial') return '일부 실패'
-  if (!status) return '기록 없음'
-  return status
 }
 
 function applyFilters(query: any, filters: InboundFilters) {
@@ -127,7 +88,6 @@ export function InboundHistoryManager() {
   const [totalCount, setTotalCount] = useState(0)
   const [totalQty, setTotalQty] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
-  const [lastSync, setLastSync] = useState<SyncLog | null>(null)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -176,23 +136,6 @@ export function InboundHistoryManager() {
       sizes: sortInboundOptionValues(sizes),
       warehouses: sortInboundOptionValues(warehouses),
     })
-  }
-
-  async function fetchLastSync() {
-    const { data, error } = await supabase
-      .from('ops_sync_logs')
-      .select('status, success_count, fail_count, finished_at')
-      .eq('sync_type', 'inbound_history')
-      .order('finished_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (error) {
-      console.error('입고 동기화 기록 조회 실패:', error)
-      return
-    }
-
-    setLastSync((data || null) as SyncLog | null)
   }
 
   async function fetchTotalQty(filters: InboundFilters) {
@@ -316,11 +259,7 @@ export function InboundHistoryManager() {
   useEffect(() => {
     async function initialize() {
       try {
-        await Promise.all([
-          fetchFilterOptions(),
-          fetchLastSync(),
-          loadData(1),
-        ])
+        await Promise.all([fetchFilterOptions(), loadData(1)])
       } catch (error: any) {
         console.error(error)
         setErrorMessage(
@@ -461,7 +400,7 @@ export function InboundHistoryManager() {
         </section>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-xs font-medium text-gray-500">조회 건수</p>
           <p className="mt-2 text-2xl font-bold text-gray-900">
@@ -476,33 +415,6 @@ export function InboundHistoryManager() {
           </p>
         </div>
 
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <p className="flex items-center gap-2 text-xs font-medium text-gray-500">
-              <Database className="h-4 w-4" />
-              최근 입고 동기화
-            </p>
-
-            <button
-              type="button"
-              onClick={() => void fetchLastSync()}
-              className="text-gray-400 transition hover:text-gray-700"
-              title="동기화 기록 새로고침"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          </div>
-
-          <p className="mt-2 text-sm font-semibold text-gray-900">
-            {formatDateTime(lastSync?.finished_at)}
-          </p>
-          <p className={`mt-1 text-xs ${getSyncStatusClass(lastSync?.status)}`}>
-            {getSyncStatusText(lastSync?.status)}
-            {lastSync
-              ? ` · 성공 ${formatNumber(lastSync.success_count)}건`
-              : ''}
-          </p>
-        </div>
       </section>
 
       <section className="rounded-2xl border bg-white shadow-sm">

@@ -7,6 +7,7 @@ import type { ProductImage } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
+import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
 const pageSize = 100
 
@@ -275,10 +276,9 @@ async function handleUploadExcel(file: File) {
   return (
     <div className="space-y-6">
 
-      <section>
-        <h1 className="text-2xl font-bold">
-          이미지관리
-        </h1>
+      <section className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <h1 className="text-2xl font-bold">이미지관리</h1>
+        <OpsDataFreshness sources={['images']} />
       </section>
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">

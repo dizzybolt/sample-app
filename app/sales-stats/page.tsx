@@ -12,7 +12,7 @@ export default function SalesStatsPage() {
           </p>
         </div>
 
-        <OpsDataFreshness />
+        <OpsDataFreshness sources={['sales', 'claim']} />
       </section>
 
       <SalesStatsManager />

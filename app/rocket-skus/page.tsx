@@ -12,7 +12,7 @@ export default function RocketSkusPage() {
           </p>
         </div>
 
-        <OpsDataFreshness />
+        <OpsDataFreshness sources={['images']} />
       </section>
 
       <RocketSkuManager />
