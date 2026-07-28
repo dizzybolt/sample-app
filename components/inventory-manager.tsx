@@ -251,13 +251,6 @@ export function InventoryManager() {
 
   const filteredInventories = useMemo(() => {
     return [...inventories].sort((a, b) => {
-      const dateA = a.work_date || a.updated_at || ''
-      const dateB = b.work_date || b.updated_at || ''
-
-      const dateCompare = dateB.localeCompare(dateA)
-
-      if (dateCompare !== 0) return dateCompare
-
       const mappingA = getSkuMapping(a.sku)
       const mappingB = getSkuMapping(b.sku)
 
@@ -271,14 +264,18 @@ export function InventoryManager() {
       const colorA = mappingA?.color_code || a.sku.split('_')[1] || ''
       const colorB = mappingB?.color_code || b.sku.split('_')[1] || ''
 
-      const colorCompare = colorA.localeCompare(colorB, 'ko', { numeric: true })
+      const colorCompare = colorA.localeCompare(colorB, 'ko', {
+        numeric: true,
+      })
 
       if (colorCompare !== 0) return colorCompare
 
       const sizeA = mappingA?.size_code || a.sku.split('_')[2] || ''
       const sizeB = mappingB?.size_code || b.sku.split('_')[2] || ''
 
-      return sizeA.localeCompare(sizeB, 'ko', { numeric: true })
+      return sizeA.localeCompare(sizeB, 'ko', {
+        numeric: true,
+      })
     })
   }, [inventories, skuMappings])
 

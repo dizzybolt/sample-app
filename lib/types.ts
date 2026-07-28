@@ -428,6 +428,7 @@ export interface SkuMapping {
 
   memo?: string | null
 
+  is_manual_mapping: boolean
   is_active: boolean
 
   created_at: string

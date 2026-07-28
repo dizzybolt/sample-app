@@ -129,6 +129,7 @@ export function ProductImageManager() {
       ftp_path: ftpPath.trim() || null,
       memo: memo.trim() || null,
 
+      is_manual_mapping: true,
       is_active: true,
       updated_at: new Date().toISOString(),
     }
@@ -227,6 +228,7 @@ async function handleUploadExcel(file: File) {
         file_name: fileName || null,
         ftp_path: ftpPath || null,
         memo: memo || null,
+        is_manual_mapping: true,
         is_active: true,
         updated_at: new Date().toISOString(),
       }
