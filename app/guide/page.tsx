@@ -103,7 +103,7 @@ const guideSections = [
     usage: [
       '모델코드 기준을 조합해 모델명을 생성하거나 직접 입력합니다.',
       '판매가, TAG가, 원가, 상품상태, 성별, 사이즈그룹과 비고를 저장합니다.',
-      '모델별 SKU 등록 수와 상품 이미지를 함께 확인합니다.',
+      '모델별 SKU 등록 수와 MODEL 구분의 대표 이미지를 함께 확인합니다.',
       '상태와 검색어로 상품을 조회합니다.',
       '정해진 헤더로 엑셀을 일괄 업로드하거나 목록을 다운로드합니다.',
     ],
@@ -141,15 +141,16 @@ const guideSections = [
     category: '상품관리',
     title: '이미지관리',
     icon: Images,
-    role: '모델명별 대표 이미지 URL과 원본 파일 정보를 관리합니다.',
+    role: 'OPS_CORE에서 동기화한 모델 대표·컬러 이미지를 확인하고 실제 상품 컬러코드에 맞게 연결합니다.',
     usage: [
-      '모델명과 이미지 URL을 필수로 입력합니다.',
-      '파일명, FTP 경로와 비고를 함께 관리할 수 있습니다.',
-      '모델명이나 이미지 URL로 검색합니다.',
-      '엑셀 일괄 업로드와 이미지 목록 다운로드를 사용합니다.',
-      '목록에서 썸네일과 실제 URL을 확인합니다.',
+      'MODEL은 모델 대표 이미지, COLOR는 모델명_컬러코드 이미지를 의미합니다.',
+      'FTP 파일 순번과 실제 컬러코드가 다르면 COLOR 행의 컬러코드를 수정합니다.',
+      '컬러코드를 저장하면 연결용 이미지키도 모델명_컬러코드 형식으로 함께 변경됩니다.',
+      '앱에서 저장한 행은 수기 매핑으로 보호되어 다음 OPS_CORE 이미지 업로드에서도 컬러코드와 이미지키가 유지됩니다.',
+      '파일명, FTP 경로와 이미지 URL은 원본 파일 기준으로 계속 동기화됩니다.',
+      '모델명, 컬러코드, 이미지키 또는 이미지 URL로 검색하고 목록을 엑셀로 내려받습니다.',
     ],
-    note: '발주추천 이미지 포함 엑셀은 모델명으로 이 페이지의 이미지 URL을 찾아 사용합니다.',
+    note: 'FTP 파일명은 변경하지 않아도 됩니다. 실제 상품 연결이 잘못된 경우 컬러코드만 수정하고, 다음 동기화 후에도 수기 매핑 유지 여부를 확인하세요.',
   },
   {
     category: '재고관리',
@@ -163,6 +164,8 @@ const guideSections = [
       '창고명 또는 창고코드, SKU, 수량, 비고 형식으로 엑셀을 일괄 등록·수정합니다.',
       '현재 페이지 또는 전체 재고를 엑셀로 다운로드합니다.',
       '상단 데이터 갱신일로 OPS_CORE 동기화 시점을 확인합니다.',
+      'SKU의 COLOR 이미지를 우선 표시하며, 컬러 이미지가 없으면 MODEL 대표 이미지를 표시합니다.',
+      '같은 모델은 컬러코드와 사이즈 순으로 정렬되고 컬러별 이미지는 첫 행에 한 번만 표시됩니다.',
     ],
     note: '수량 수정과 삭제는 변경 로그에 기록됩니다. 운영 재고를 변경하기 전에 창고와 SKU를 다시 확인하세요.',
   },
@@ -191,10 +194,11 @@ const guideSections = [
       '향후 예상 판매일수, 발주 적용률과 소진율 기준을 설정합니다.',
       '행사·특판처럼 판매량을 제외할 날짜를 입력합니다.',
       '기간 내 입고 또는 기간 경계에서 가장 가까운 직전·직후 입고를 기준으로 분석합니다.',
-      '모델을 선택해 색상·사이즈별 SKU 계산을 확인합니다.',
+      '상단 발주 필요 모델에서는 MODEL 대표 이미지를 확인합니다.',
+      '모델을 선택해 색상·사이즈별 SKU 계산과 COLOR 이미지를 확인합니다.',
       '전체 모델 목록과 선택 모델 SKU 상세목록을 이미지 포함 XLSM으로 다운로드합니다.',
     ],
-    note: 'SKU 추천수량은 예상 판매량에서 최신 SKU 현재고를 차감한 값입니다. 최종 발주 전 리드타임과 시즌 운영계획을 함께 검토하세요.',
+    note: 'SKU 상세의 COLOR 이미지가 없으면 MODEL 대표 이미지가 대신 표시됩니다. 추천수량은 예상 판매량에서 최신 SKU 현재고를 차감한 값이므로 최종 발주 전 리드타임과 시즌 운영계획을 함께 검토하세요.',
   },
   {
     category: '재고관리',
@@ -219,9 +223,10 @@ const guideSections = [
       '주문, 반품, 취소와 순출고수량·순매출금액을 비교합니다.',
       '이전 동일 기간 대비 증감률을 확인합니다.',
       '일자별·쇼핑몰별 순매출과 모델·SKU TOP 20을 확인합니다.',
+      '모델별 TOP 20은 MODEL 대표 이미지, SKU별 TOP 20은 COLOR 이미지를 표시합니다.',
       '쿠팡로켓 적용 매입가와 수량을 확인합니다.',
     ],
-    note: '사은품 모델은 사은품 출고내역에서 별도 관리되며 주문통계 집계에서 제외됩니다.',
+    note: 'SKU별 COLOR 이미지가 없으면 MODEL 대표 이미지가 대신 표시됩니다. 사은품 모델은 사은품 출고내역에서 별도 관리되며 주문통계 집계에서 제외됩니다.',
   },
   {
     category: '판매관리',
@@ -230,7 +235,7 @@ const guideSections = [
     role: '쿠팡로켓 전용 SKU ID와 매입가, 판매가, 수수료율을 관리합니다.',
     usage: [
       'Rocket SKU ID, SKU, 모델명과 가격·수수료 정보를 등록합니다.',
-      '모델 이미지를 함께 확인합니다.',
+      'SKU의 COLOR 이미지를 우선 확인하고, 컬러 이미지가 없으면 MODEL 대표 이미지를 확인합니다.',
       'Rocket SKU ID, SKU 또는 모델명으로 검색합니다.',
       '엑셀로 일괄 업로드하거나 목록을 다운로드합니다.',
       '기존 항목을 수정하거나 삭제합니다.',
@@ -433,6 +438,51 @@ export default function GuidePage() {
                 <p className="mt-1 text-gray-500">{status.description}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-gray-100 p-2">
+              <Images className="h-5 w-5 text-gray-700" />
+            </div>
+
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                상품 이미지 연결·동기화 기준
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-gray-500">
+                FTP 원본 이미지는 OPS_CORE에서 수집해 Supabase로
+                동기화하고, Sample App은 화면 성격에 따라 모델 또는 컬러
+                이미지를 사용합니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-xl border p-4">
+              <p className="font-semibold text-gray-900">MODEL 이미지</p>
+              <p className="mt-1 leading-5 text-gray-600">
+                모델명 단위의 대표 이미지입니다. 상품 마스터, 발주추천
+                모델 목록과 주문통계 모델별 TOP 20에서 사용합니다.
+              </p>
+            </div>
+
+            <div className="rounded-xl border p-4">
+              <p className="font-semibold text-gray-900">COLOR 이미지</p>
+              <p className="mt-1 leading-5 text-gray-600">
+                모델명_컬러코드 단위의 이미지입니다. 재고, 로켓SKU,
+                발주추천 SKU 상세와 주문통계 SKU별 TOP 20에서 우선
+                사용하며, 없으면 MODEL 이미지로 대체합니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl bg-blue-50 p-4 text-sm leading-6 text-blue-800">
+            FTP 파일 순번이 실제 컬러코드와 다르면 이미지관리에서
+            컬러코드를 수정해 저장하세요. 이 값은 수기 매핑으로 보호되므로
+            이후 OPS_CORE 이미지 업로드에서도 유지됩니다. 원본 파일명,
+            FTP 경로와 이미지 URL은 최신 원본 기준으로 계속 갱신됩니다.
           </div>
         </section>
 
