@@ -1,4 +1,5 @@
 import { ProductMasterManager } from '@/components/product-master-manager'
+import { OpsDataFreshness } from '@/components/ops-data-freshness'
 
 export default function ProductsPage() {
   return (
@@ -8,9 +9,10 @@ export default function ProductsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">상품 마스터</h1>
             <p className="mt-1 text-sm text-gray-500">
-              브랜드/카테고리/연도/시즌 코드를 조합해 모델명을 생성하고 상품 마스터를 등록합니다.
+              OPS 재고의 모델·컬러·사이즈를 자동 반영하고 상품 정보를 보완합니다.
             </p>
           </div>
+          <OpsDataFreshness sources={['stock']} />
         </section>
         <section>
           <ProductMasterManager />
