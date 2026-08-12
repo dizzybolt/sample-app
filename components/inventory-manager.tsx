@@ -943,9 +943,9 @@ export function InventoryManager() {
                 <th className="p-3 text-center">색상</th>
                 <th className="p-3 text-center">사이즈</th>
                 <th className="p-3 text-center font-semibold">SKU</th>
-                {/* <th className="p-3 text-center font-semibold">현재고<br/>(수기)</th> */}
+                <th className="p-3 text-center font-semibold">현재고<br/>(수기)</th>
                 <th className="p-3 text-center font-semibold">OPS<br/>재고<br/>(ERP)</th>
-                {/* <th className="p-3 text-center">현재고<br/>기준일</th> */}
+                <th className="p-3 text-center">현재고<br/>기준일</th>
                 <th className="p-3 text-left">비고</th>
                 <th className="p-3 text-right">관리</th>
               </tr>
