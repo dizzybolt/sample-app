@@ -163,6 +163,167 @@ function getColorAndSizeFromSku(sku: string) {
   }
 }
 
+
+type ExpandedSetSku = {
+  sku: string
+  multiplier: number
+}
+
+type SetExpansionContext = {
+  knownSkus: Set<string>
+  knownModels: Set<string>
+  colorsByModel: Map<string, Set<string>>
+}
+
+function normalizeSourceSku(value?: string | null) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/_FREE$/, '_F')
+}
+
+function isSetSku(value?: string | null) {
+  return normalizeSourceSku(value).startsWith('SET_')
+}
+
+function resolveKnownModel(
+  token: string,
+  context: SetExpansionContext
+) {
+  const normalized = String(token || '').trim().toUpperCase()
+  if (!normalized) return ''
+  if (context.knownModels.has(normalized)) return normalized
+
+  const suffixMatches = Array.from(context.knownModels).filter((model) =>
+    model.endsWith(normalized)
+  )
+  return suffixMatches.length === 1 ? suffixMatches[0] : ''
+}
+
+function buildKnownSkuContext(
+  salesRows: DemandSalesRow[],
+  claimRows: DemandClaimRow[],
+  stockRows: DemandStockRow[]
+): SetExpansionContext {
+  const knownSkus = new Set<string>()
+  const knownModels = new Set<string>()
+  const colorsByModel = new Map<string, Set<string>>()
+
+  const register = (value?: string | null) => {
+    if (!value || isSetSku(value)) return
+    const sku = normalizeReorderSku(value)
+    const model = getModelFromReorderSku(sku)
+    if (!sku || !model || model === '-' || model === 'SET') return
+
+    knownSkus.add(sku)
+    knownModels.add(model)
+
+    const { colorCode } = getColorAndSizeFromSku(sku)
+    if (!colorCode) return
+    const colors = colorsByModel.get(model) || new Set<string>()
+    colors.add(colorCode)
+    colorsByModel.set(model, colors)
+  }
+
+  salesRows.forEach((row) => register(row.sku))
+  claimRows.forEach((row) => register(row.sku))
+  stockRows.forEach((row) => register(row.sku))
+
+  return { knownSkus, knownModels, colorsByModel }
+}
+
+function expandAllColorsForModel(
+  modelToken: string,
+  size: string,
+  context: SetExpansionContext
+): ExpandedSetSku[] {
+  const model = resolveKnownModel(modelToken, context)
+  if (!model || !size) return []
+
+  const colors = Array.from(context.colorsByModel.get(model) || []).sort((a, b) =>
+    a.localeCompare(b, 'ko-KR', { numeric: true })
+  )
+
+  return colors
+    .map((colorCode) => normalizeReorderSku(`${model}_${colorCode}_${size}`))
+    .filter((sku) => context.knownSkus.has(sku))
+    .map((sku) => ({ sku, multiplier: 1 }))
+}
+
+function expandSetSku(
+  value: string,
+  context: SetExpansionContext
+): ExpandedSetSku[] {
+  const source = normalizeSourceSku(value)
+  if (!source.startsWith('SET_')) {
+    const sku = normalizeReorderSku(source)
+    return sku ? [{ sku, multiplier: 1 }] : []
+  }
+
+  const body = source.slice(4)
+
+  // 4) 서로 다른 두 모델의 명시적 조합
+  // 예: SET_TS195M2(03/095)+SL563L2(03/30)
+  const explicitParts = body.split('+')
+  if (
+    explicitParts.length >= 2 &&
+    explicitParts.every((part) => /^([A-Z0-9]+)\(([A-Z0-9]+)\/([A-Z0-9]+)\)$/.test(part))
+  ) {
+    const expanded: ExpandedSetSku[] = []
+    for (const part of explicitParts) {
+      const match = part.match(/^([A-Z0-9]+)\(([A-Z0-9]+)\/([A-Z0-9]+)\)$/)
+      if (!match) return []
+      const model = resolveKnownModel(match[1], context)
+      if (!model) return []
+      const sku = normalizeReorderSku(`${model}_${match[2]}_${match[3]}`)
+      if (!context.knownSkus.has(sku)) return []
+      expanded.push({ sku, multiplier: 1 })
+    }
+    return expanded
+  }
+
+  // 5) 서로 다른 모델명을 축약해서 +로 연결한 조합
+  // 예: SET_MBP151+152_30 => MBP151/MBP152 각각 모든 컬러의 30 사이즈
+  const shorthandMatch = body.match(/^([A-Z]+)(\d+)\+(\d+)_([A-Z0-9]+)$/)
+  if (shorthandMatch) {
+    const prefix = shorthandMatch[1]
+    const firstModelToken = `${prefix}${shorthandMatch[2]}`
+    const secondModelToken = `${prefix}${shorthandMatch[3]}`
+    const size = shorthandMatch[4]
+    const first = expandAllColorsForModel(firstModelToken, size, context)
+    const second = expandAllColorsForModel(secondModelToken, size, context)
+    return first.length > 0 && second.length > 0 ? [...first, ...second] : []
+  }
+
+  const parts = body.split('_')
+
+  // 3) 동일 모델 N종 세트 — 해당 모델의 모든 컬러를 같은 사이즈로 1개씩 환산
+  if (parts.length === 3 && /^\d+SET$/.test(parts[1])) {
+    return expandAllColorsForModel(parts[0], parts[2], context)
+  }
+
+  // 1, 2) 동일 모델 + 2개 이상 색상 조합
+  if (parts.length === 3 && parts[1].includes('+')) {
+    const model = resolveKnownModel(parts[0], context)
+    if (!model) return []
+    const colors = parts[1].split('+').filter(Boolean)
+    if (colors.length < 2) return []
+
+    const expanded = colors.map((colorCode) => ({
+      sku: normalizeReorderSku(`${model}_${colorCode}_${parts[2]}`),
+      multiplier: 1,
+    }))
+    return expanded.every((item) => context.knownSkus.has(item.sku))
+      ? expanded
+      : []
+  }
+
+  // 6) 동일 모델 + 단일 색상/사이즈 SET prefix: 현재 제외
+  // 7) 동일 모델 + 사이즈만 존재하는 특수형: 현재 제외
+  return []
+}
+
 function getDecision(
   method: DemandCalculationMethod,
   recommendedQty: number,
@@ -445,6 +606,7 @@ export function buildDemandRecommendations(
   )
 
   const months = listMonths(options.startDate, options.endDate)
+  const setExpansionContext = buildKnownSkuContext(salesRows, claimRows, stockRows)
   const salesByModelMonth = new Map<string, Map<string, number>>()
   const claimsByModelMonth = new Map<string, Map<string, number>>()
   const salesByModelSkuMonth = new Map<string, Map<string, Map<string, number>>>()
@@ -454,49 +616,60 @@ export function buildDemandRecommendations(
   salesRows.forEach((row) => {
     const date = toDateOnly(row.order_date)
     const month = toMonthKey(date)
-    const sku = normalizeReorderSku(row.sku)
-    const model = getModelFromReorderSku(sku)
-    if (!date || date < options.startDate || date > options.endDate) return
-    if (!month || !sku || !model || model === '-') return
+    if (!date || date < options.startDate || date > options.endDate || !month) return
 
-    const qty = Number(row.qty || 0)
+    const expandedRows = expandSetSku(row.sku, setExpansionContext)
+    if (expandedRows.length === 0) return
+    const sourceQty = Number(row.qty || 0)
 
-    const modelMonth = salesByModelMonth.get(model) || new Map<string, number>()
-    modelMonth.set(month, (modelMonth.get(month) || 0) + qty)
-    salesByModelMonth.set(model, modelMonth)
+    expandedRows.forEach(({ sku, multiplier }) => {
+      const model = getModelFromReorderSku(sku)
+      if (!sku || !model || model === '-' || model === 'SET') return
+      const qty = sourceQty * multiplier
 
-    const modelSku = salesByModelSkuMonth.get(model) || new Map()
-    const skuMonth = modelSku.get(sku) || new Map<string, number>()
-    skuMonth.set(month, (skuMonth.get(month) || 0) + qty)
-    modelSku.set(sku, skuMonth)
-    salesByModelSkuMonth.set(model, modelSku)
+      const modelMonth = salesByModelMonth.get(model) || new Map<string, number>()
+      modelMonth.set(month, (modelMonth.get(month) || 0) + qty)
+      salesByModelMonth.set(model, modelMonth)
+
+      const modelSku = salesByModelSkuMonth.get(model) || new Map()
+      const skuMonth = modelSku.get(sku) || new Map<string, number>()
+      skuMonth.set(month, (skuMonth.get(month) || 0) + qty)
+      modelSku.set(sku, skuMonth)
+      salesByModelSkuMonth.set(model, modelSku)
+    })
   })
 
   claimRows.forEach((row) => {
     const date = toDateOnly(row.claim_date)
     const month = toMonthKey(date)
-    const sku = normalizeReorderSku(row.sku)
-    const model = getModelFromReorderSku(sku)
-    if (!date || date < options.startDate || date > options.endDate) return
-    if (!month || !sku || !model || model === '-') return
+    if (!date || date < options.startDate || date > options.endDate || !month) return
 
-    const qty = Math.abs(Number(row.qty || 0))
+    const expandedRows = expandSetSku(row.sku, setExpansionContext)
+    if (expandedRows.length === 0) return
+    const sourceQty = Math.abs(Number(row.qty || 0))
 
-    const modelMonth = claimsByModelMonth.get(model) || new Map<string, number>()
-    modelMonth.set(month, (modelMonth.get(month) || 0) + qty)
-    claimsByModelMonth.set(model, modelMonth)
+    expandedRows.forEach(({ sku, multiplier }) => {
+      const model = getModelFromReorderSku(sku)
+      if (!sku || !model || model === '-' || model === 'SET') return
+      const qty = sourceQty * multiplier
 
-    const modelSku = claimsByModelSkuMonth.get(model) || new Map()
-    const skuMonth = modelSku.get(sku) || new Map<string, number>()
-    skuMonth.set(month, (skuMonth.get(month) || 0) + qty)
-    modelSku.set(sku, skuMonth)
-    claimsByModelSkuMonth.set(model, modelSku)
+      const modelMonth = claimsByModelMonth.get(model) || new Map<string, number>()
+      modelMonth.set(month, (modelMonth.get(month) || 0) + qty)
+      claimsByModelMonth.set(model, modelMonth)
+
+      const modelSku = claimsByModelSkuMonth.get(model) || new Map()
+      const skuMonth = modelSku.get(sku) || new Map<string, number>()
+      skuMonth.set(month, (skuMonth.get(month) || 0) + qty)
+      modelSku.set(sku, skuMonth)
+      claimsByModelSkuMonth.set(model, modelSku)
+    })
   })
 
   stockRows.forEach((row) => {
+    if (isSetSku(row.sku)) return
     const sku = normalizeReorderSku(row.sku)
     const model = getModelFromReorderSku(sku)
-    if (!sku || !model || model === '-') return
+    if (!sku || !model || model === '-' || model === 'SET') return
 
     const modelStock = stockByModelSku.get(model) || new Map<string, number>()
     modelStock.set(sku, (modelStock.get(sku) || 0) + Number(row.qty || 0))
