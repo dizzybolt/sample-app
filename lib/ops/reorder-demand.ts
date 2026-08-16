@@ -184,7 +184,8 @@ function normalizeSourceSku(value?: string | null) {
 }
 
 function isSetSku(value?: string | null) {
-  return normalizeSourceSku(value).startsWith('SET_')
+  const source = normalizeSourceSku(value)
+  return source.startsWith('SET_') || /_\d+SET_[A-Z0-9]+$/.test(source)
 }
 
 function resolveKnownModel(
@@ -256,6 +257,19 @@ function expandSetSku(
   context: SetExpansionContext
 ): ExpandedSetSku[] {
   const source = normalizeSourceSku(value)
+
+  // 구형 NSET 형식: 모델명_2SET/3SET/4SET/5SET_사이즈
+  // 예: P10TS004K1_5SET_090
+  // SET_ prefix가 없어도 해당 모델의 모든 컬러를 같은 사이즈로 1개씩 환산한다.
+  const legacyNSetMatch = source.match(/^([A-Z0-9]+)_(\d+)SET_([A-Z0-9]+)$/)
+  if (legacyNSetMatch) {
+    return expandAllColorsForModel(
+      legacyNSetMatch[1],
+      legacyNSetMatch[3],
+      context
+    )
+  }
+
   if (!source.startsWith('SET_')) {
     const sku = normalizeReorderSku(source)
     return sku ? [{ sku, multiplier: 1 }] : []
