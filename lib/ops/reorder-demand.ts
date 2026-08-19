@@ -579,6 +579,87 @@ function pickFallbackPeriod(monthlyRows: Omit<DemandMonthlyRow, 'isSelected'>[])
   }
 }
 
+
+
+export type DemandDailyExportRow = {
+  date: string
+  sourceSku: string
+  convertedSku: string
+  model: string
+  colorCode: string
+  size: string
+  sourceType: '일반' | 'SET환산'
+  salesQty: number
+  claimQty: number
+  netSalesQty: number
+}
+
+export function buildDemandDailyExportRows(
+  salesRows: DemandSalesRow[],
+  claimRows: DemandClaimRow[],
+  stockRows: DemandStockRow[],
+  modelName: string,
+  startDate: string,
+  endDate: string
+): DemandDailyExportRow[] {
+  const targetModel = String(modelName || '').trim().toUpperCase()
+  if (!targetModel || !startDate || !endDate || startDate > endDate) return []
+
+  const context = buildKnownSkuContext(salesRows, claimRows, stockRows)
+  const aggregated = new Map<string, DemandDailyExportRow>()
+
+  const register = (
+    dateValue: string,
+    sourceSkuValue: string,
+    quantity: number,
+    kind: 'sales' | 'claim'
+  ) => {
+    const date = toDateOnly(dateValue)
+    if (!date || date < startDate || date > endDate) return
+
+    const sourceSku = normalizeSourceSku(sourceSkuValue)
+    const expandedRows = expandSetSku(sourceSkuValue, context)
+    if (expandedRows.length === 0) return
+    const sourceType: '일반' | 'SET환산' = isSetSku(sourceSkuValue)
+      ? 'SET환산'
+      : '일반'
+
+    expandedRows.forEach(({ sku, multiplier }) => {
+      const model = getModelFromReorderSku(sku)
+      if (model !== targetModel) return
+      const { colorCode, size } = getColorAndSizeFromSku(sku)
+      const key = `${date}\u0001${sourceSku}\u0001${sku}`
+      const current = aggregated.get(key) || {
+        date,
+        sourceSku,
+        convertedSku: sku,
+        model,
+        colorCode,
+        size,
+        sourceType,
+        salesQty: 0,
+        claimQty: 0,
+        netSalesQty: 0,
+      }
+      const qty = Math.abs(Number(quantity || 0)) * multiplier
+      if (kind === 'sales') current.salesQty += qty
+      else current.claimQty += qty
+      current.netSalesQty = current.salesQty - current.claimQty
+      aggregated.set(key, current)
+    })
+  }
+
+  salesRows.forEach((row) => register(row.order_date, row.sku, row.qty, 'sales'))
+  claimRows.forEach((row) => register(row.claim_date, row.sku, row.qty, 'claim'))
+
+  return Array.from(aggregated.values()).sort(
+    (a, b) =>
+      a.date.localeCompare(b.date) ||
+      a.convertedSku.localeCompare(b.convertedSku, 'ko-KR', { numeric: true }) ||
+      a.sourceSku.localeCompare(b.sourceSku, 'ko-KR', { numeric: true })
+  )
+}
+
 export function buildDemandRecommendations(
   salesRows: DemandSalesRow[],
   claimRows: DemandClaimRow[],

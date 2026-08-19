@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { ListPagination } from '@/components/list-pagination'
 import {
   buildDemandRecommendations,
+  buildDemandDailyExportRows,
   DEMAND_ANALYSIS_MONTHS,
   DEMAND_LOW_VOLUME_TOTAL_QTY,
   DEMAND_MAX_SEASON_MONTHS,
@@ -94,6 +95,46 @@ function formatMonth(value?: string | null) {
   const [year, month] = value.split('-')
   if (!year || !month) return value
   return `${year.slice(2)}.${month}`
+}
+
+
+function getMonthStartDate(month: string) {
+  return month ? `${month}-01` : ''
+}
+
+function getMonthEndDate(month: string) {
+  if (!month) return ''
+  const [year, monthValue] = month.split('-').map(Number)
+  const lastDay = new Date(year, monthValue, 0).getDate()
+  return `${year}-${String(monthValue).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+}
+
+function listDatesInclusive(startDate: string, endDate: string) {
+  if (!startDate || !endDate || startDate > endDate) return []
+  const result: string[] = []
+  const current = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
+  while (current <= end) {
+    const year = current.getFullYear()
+    const month = String(current.getMonth() + 1).padStart(2, '0')
+    const day = String(current.getDate()).padStart(2, '0')
+    result.push(`${year}-${month}-${day}`)
+    current.setDate(current.getDate() + 1)
+  }
+  return result
+}
+
+function getKoreanWeekday(date: string) {
+  const labels = ['일', '월', '화', '수', '목', '금', '토']
+  const value = new Date(`${date}T00:00:00`)
+  return labels[value.getDay()] || ''
+}
+
+function clampDate(value: string, minValue: string, maxValue: string) {
+  if (!value) return value
+  if (minValue && value < minValue) return minValue
+  if (maxValue && value > maxValue) return maxValue
+  return value
 }
 
 function getDateMonthsAgo(months: number) {
@@ -598,53 +639,278 @@ export function ReorderDemandManager() {
   }
 
   async function exportModelRecommendation(model: DemandModelSummary) {
-    const targets = model.skuRows.map((row) => ({
-      modelName: model.model,
-      colorCode: row.colorCode,
-      sku: row.sku,
-    }))
-    const imageMap = await fetchProductImageMap(supabase, targets)
+    if (!sourceState) {
+      window.alert('원본 판매데이터가 없어 모델 상세 엑셀을 생성할 수 없습니다.')
+      return
+    }
 
-    const sortedSkuRows = [...model.skuRows].sort((a, b) =>
-      compareExportText(a.model, b.model) ||
-      compareExportText(a.colorCode, b.colorCode) ||
-      compareExportText(a.size, b.size) ||
-      compareExportText(a.sku, b.sku)
+    const periodStart = clampDate(
+      getMonthStartDate(model.demandStartMonth),
+      sourceState.startDate,
+      sourceState.endDate
+    )
+    const periodEnd = clampDate(
+      getMonthEndDate(model.demandEndMonth),
+      sourceState.startDate,
+      sourceState.endDate
     )
 
-    const rows = sortedSkuRows.map((row) => ({
-      이미지URL:
-        resolveProductImage(imageMap, {
-          modelName: model.model,
-          colorCode: row.colorCode,
-          sku: row.sku,
-        }) || '',
-      썸네일: '',
-      모델명: model.model,
-      SKU: row.sku,
-      컬러코드: row.colorCode,
-      사이즈: row.size,
-      산정방식: getMethodLabel(model.calculationMethod),
-      적용기간:
-        model.demandStartMonth && model.demandEndMonth
-          ? `${model.demandStartMonth}~${model.demandEndMonth}`
-          : '',
-      순판매: row.periodNetSalesQty,
-      판매비중: Number((row.salesShare / 100).toFixed(4)),
-      현재고: row.currentStockQty,
-      목표수요: row.targetDemandQty,
-      추천발주: row.recommendedQty,
-      모델판단: model.decision,
-      긴급도: model.urgency,
-    }))
+    if (!periodStart || !periodEnd || periodStart > periodEnd) {
+      window.alert('적용기간을 확인해 주세요.')
+      return
+    }
 
-    await writeMacroWorkbook(
-      rows,
-      `시즌수요_발주추천_${model.model}_${getToday()}.xlsm`,
-      [42, 14, 18, 28, 12, 12, 18, 22, 12, 12, 12, 12, 12, 14, 12]
-    )
+    setExporting(true)
+    try {
+      const targets = model.skuRows.map((row) => ({
+        modelName: model.model,
+        colorCode: row.colorCode,
+        sku: row.sku,
+      }))
+      const imageMap = await fetchProductImageMap(supabase, targets)
+      const dailyRows = buildDemandDailyExportRows(
+        sourceState.salesRows,
+        sourceState.claimRows,
+        sourceState.stockRows,
+        model.model,
+        periodStart,
+        periodEnd
+      )
+      const dates = listDatesInclusive(periodStart, periodEnd)
+      const sortedSkuRows = [...model.skuRows].sort((a, b) =>
+        compareExportText(a.model, b.model) ||
+        compareExportText(a.colorCode, b.colorCode) ||
+        compareExportText(a.size, b.size) ||
+        compareExportText(a.sku, b.sku)
+      )
+
+      const dailyBySkuDate = new Map<string, number>()
+      dailyRows.forEach((row) => {
+        const key = `${row.convertedSku}\u0001${row.date}`
+        dailyBySkuDate.set(key, (dailyBySkuDate.get(key) || 0) + row.netSalesQty)
+      })
+
+      const response = await fetch(MACRO_TEMPLATE_PATH)
+      if (!response.ok) {
+        throw new Error('매크로 엑셀 템플릿을 불러오지 못했습니다.')
+      }
+      const buffer = await response.arrayBuffer()
+      const workbook = XLSX.read(buffer, { type: 'array', bookVBA: true })
+      const baseSheetName = workbook.SheetNames[0]
+
+      const targetDemandTotal = sortedSkuRows.reduce(
+        (sum, row) => sum + Number(row.targetDemandQty || 0),
+        0
+      )
+      const recommendedTotal = sortedSkuRows.reduce(
+        (sum, row) => sum + Number(row.recommendedQty || 0),
+        0
+      )
+      const periodDays = dates.length
+      const dailyAverage = periodDays > 0 ? model.demandSalesQty / periodDays : 0
+      const calculationRows: (string | number | null)[][] = []
+      calculationRows.push([
+        '', '', '발주서 (초안)', '', '', '', '',
+        '판매수량', '', model.demandSalesQty, '',
+        '목표수요 합계', '', '', targetDemandTotal,
+      ])
+      calculationRows.push([
+        '', '',
+        `[품번 : ${model.model}] [산정방식 : ${getMethodLabel(model.calculationMethod)}] [적용기간 : ${periodStart} ~ ${periodEnd} (${periodDays}일)]`,
+        '', '', '', '',
+        '판매일수', '', periodDays, '',
+        '추천발주 합계', '', '', recommendedTotal,
+      ])
+      calculationRows.push([
+        '', '', '', '', '', '', '', '일판매', '',
+        Number(dailyAverage.toFixed(2)), '', '', '', '', '',
+      ])
+      calculationRows.push([
+        '', '', '', '', '', '', '', '예상 판매일수', '', periodDays,
+        '', '', '', '', '',
+      ])
+      calculationRows.push([
+        '', '', '', '', '', '', '', '예상 판매수량', '', targetDemandTotal,
+        '', '', '', '', '',
+      ])
+      calculationRows.push(Array(15).fill(''))
+      calculationRows.push([
+        '이미지URL', '썸네일', '품번', '품번명', '칼라', 'SIZE',
+        '기간판매수량\n(순판매)', '비율(전체)', '판매비중\n(전사기준,참고)',
+        '현재고', '목표수요\n(예상수요)', '수량체크\n(목표수요-현재고)',
+        '발주수량', '모델판단', '긴급도',
+      ])
+
+      sortedSkuRows.forEach((row) => {
+        const quantityCheck = Math.max(row.targetDemandQty - row.currentStockQty, 0)
+        calculationRows.push([
+          resolveProductImage(imageMap, {
+            modelName: model.model,
+            colorCode: row.colorCode,
+            sku: row.sku,
+          }) || '',
+          '',
+          model.model,
+          '',
+          row.colorCode,
+          row.size,
+          row.periodNetSalesQty,
+          model.demandSalesQty > 0
+            ? row.periodNetSalesQty / model.demandSalesQty
+            : 0,
+          '',
+          row.currentStockQty,
+          row.targetDemandQty,
+          quantityCheck,
+          row.recommendedQty,
+          model.decision,
+          model.urgency,
+        ])
+      })
+      calculationRows.push([
+        '', '', '총    계', '', '', '',
+        sortedSkuRows.reduce((sum, row) => sum + row.periodNetSalesQty, 0),
+        '', '',
+        sortedSkuRows.reduce((sum, row) => sum + row.currentStockQty, 0),
+        targetDemandTotal,
+        sortedSkuRows.reduce(
+          (sum, row) =>
+            sum + Math.max(row.targetDemandQty - row.currentStockQty, 0),
+          0
+        ),
+        recommendedTotal, '', '',
+      ])
+
+      const calculationSheet = XLSX.utils.aoa_to_sheet(calculationRows)
+      calculationSheet['!cols'] = [
+        { wch: 42 }, { wch: 14 }, { wch: 18 }, { wch: 30 }, { wch: 10 },
+        { wch: 10 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 12 },
+        { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+      ]
+      calculationSheet['!merges'] = [
+        XLSX.utils.decode_range('C1:F1'),
+        XLSX.utils.decode_range('C2:G2'),
+      ]
+      calculationSheet['!autofilter'] = {
+        ref: `A7:O${Math.max(calculationRows.length - 1, 7)}`,
+      }
+      workbook.Sheets[baseSheetName] = calculationSheet
+
+      const dayHeaders = dates.map((date) => Number(date.slice(8, 10)))
+      const weekdayHeaders = dates.map(getKoreanWeekday)
+      const dailyMatrixRows: (string | number | null)[][] = [
+        [
+          '일자별 판매분석 (참고자료 원본)',
+          ...Array(dates.length + 7).fill(''),
+        ],
+        [
+          `[기준일자 : ${periodStart} ~ ${periodEnd}] [품번 : ${model.model} ~ ${model.model}]`,
+          ...Array(dates.length + 7).fill(''),
+        ],
+        Array(dates.length + 8).fill(''),
+        [
+          '품번', '품번명', '칼라', 'SIZE', ...dayHeaders,
+          '계', '누계', '판매율', '재고',
+        ],
+        ['', '', '', '', ...weekdayHeaders, '', '', '', ''],
+      ]
+
+      sortedSkuRows.forEach((row) => {
+        const dailyValues = dates.map(
+          (date) => dailyBySkuDate.get(`${row.sku}\u0001${date}`) || 0
+        )
+        const total = dailyValues.reduce(
+          (sum, qty) => sum + Number(qty || 0),
+          0
+        )
+        dailyMatrixRows.push([
+          model.model,
+          '',
+          row.colorCode,
+          row.size,
+          ...dailyValues.map((qty) => (qty === 0 ? null : qty)),
+          total,
+          row.periodNetSalesQty,
+          model.demandSalesQty > 0
+            ? row.periodNetSalesQty / model.demandSalesQty
+            : 0,
+          row.currentStockQty,
+        ])
+      })
+
+      const dailyTotals = dates.map((date) =>
+        sortedSkuRows.reduce(
+          (sum, row) =>
+            sum + (dailyBySkuDate.get(`${row.sku}\u0001${date}`) || 0),
+          0
+        )
+      )
+      dailyMatrixRows.push([
+        '총    계', '', '', '',
+        ...dailyTotals,
+        dailyTotals.reduce((sum, qty) => sum + qty, 0),
+        model.demandSalesQty,
+        '',
+        model.currentStockQty,
+      ])
+
+      const dailySheet = XLSX.utils.aoa_to_sheet(dailyMatrixRows)
+      dailySheet['!cols'] = [
+        { wch: 18 }, { wch: 30 }, { wch: 9 }, { wch: 9 },
+        ...dates.map(() => ({ wch: 5 })),
+        { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      ]
+      dailySheet['!merges'] = [
+        XLSX.utils.decode_range(
+          `A1:${XLSX.utils.encode_col(dates.length + 7)}1`
+        ),
+        XLSX.utils.decode_range(
+          `A2:${XLSX.utils.encode_col(dates.length + 7)}2`
+        ),
+      ]
+
+      const rawDetailRows = dailyRows.map((row) => ({
+        일자: row.date,
+        원본SKU: row.sourceSku,
+        환산SKU: row.convertedSku,
+        모델명: row.model,
+        색상코드: row.colorCode,
+        사이즈: row.size,
+        유형: row.sourceType,
+        출고수량: row.salesQty,
+        클레임수량: row.claimQty,
+        순판매수량: row.netSalesQty,
+      }))
+      const rawSheet = XLSX.utils.json_to_sheet(rawDetailRows)
+      rawSheet['!cols'] = [
+        { wch: 12 }, { wch: 32 }, { wch: 28 }, { wch: 18 }, { wch: 10 },
+        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      ]
+
+      workbook.SheetNames = workbook.SheetNames.filter(
+        (name) => name !== '2_일자별판매' && name !== '3_원본상세'
+      )
+      delete workbook.Sheets['2_일자별판매']
+      delete workbook.Sheets['3_원본상세']
+      XLSX.utils.book_append_sheet(workbook, dailySheet, '2_일자별판매')
+      XLSX.utils.book_append_sheet(workbook, rawSheet, '3_원본상세')
+
+      XLSX.writeFile(
+        workbook,
+        getSafeFileName(`발주서_${model.model}_초안_${getToday()}.xlsm`),
+        { bookType: 'xlsm', bookVBA: true }
+      )
+    } catch (error: any) {
+      console.error(error)
+      window.alert(
+        `모델 상세 엑셀 다운로드에 실패했습니다.\n\n${
+          error?.message || '알 수 없는 오류'
+        }`
+      )
+    } finally {
+      setExporting(false)
+    }
   }
-
   function downloadValidationTemplate() {
     const worksheet = XLSX.utils.json_to_sheet([
       {
