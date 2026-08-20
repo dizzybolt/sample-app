@@ -38,10 +38,21 @@ const STATUS_OPTIONS: SampleStatus[] = [
   '등록대기',
 ]
 
+function getKoreaDate(value?: string | null) {
+  if (!value) return ''
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
+
 function getDateKey(sample: SampleEntry) {
   return (
-    sample.checked_at?.slice(0, 10) ||
-    sample.created_at?.slice(0, 10) ||
+    getKoreaDate(sample.checked_at) ||
+    getKoreaDate(sample.created_at) ||
     '날짜없음'
   )
 }
@@ -395,7 +406,7 @@ export function SampleDateList({
                                   샘플입고일
                                 </p>
                                 <p className="font-medium">
-                                  {representative.checked_at?.slice(0, 10) || '-'}
+                                  {getKoreaDate(representative.checked_at) || '-'}
                                 </p>
                               </div>
 
