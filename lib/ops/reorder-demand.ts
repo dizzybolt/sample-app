@@ -156,10 +156,10 @@ function ceilToUnit(value: number, unit: number) {
 }
 
 function getColorAndSizeFromSku(sku: string) {
-  const parts = normalizeReorderSku(sku).split('_')
+  const parts = normalizeDemandSku(sku).split('_')
   return {
     colorCode: parts[1] || '',
-    size: parts.slice(2).join('_') || '',
+    size: normalizeDemandSize(parts.slice(2).join('_') || ''),
   }
 }
 
@@ -175,12 +175,31 @@ type SetExpansionContext = {
   colorsByModel: Map<string, Set<string>>
 }
 
-function normalizeSourceSku(value?: string | null) {
-  return String(value || '')
+function normalizeDemandSize(value?: string | null) {
+  const size = String(value || '').trim().toUpperCase()
+  if (size === 'FREE' || size === 'FF') return 'F'
+  return size
+}
+
+function normalizeDemandSku(value?: string | null) {
+  const source = String(value || '')
     .trim()
     .toUpperCase()
     .replace(/\s+/g, '')
-    .replace(/_FREE$/, '_F')
+
+  if (!source) return ''
+
+  const parts = source.split('_')
+  if (parts.length >= 3) {
+    const lastIndex = parts.length - 1
+    parts[lastIndex] = normalizeDemandSize(parts[lastIndex])
+  }
+
+  return normalizeReorderSku(parts.join('_'))
+}
+
+function normalizeSourceSku(value?: string | null) {
+  return normalizeDemandSku(value)
 }
 
 function isSetSku(value?: string | null) {
@@ -213,7 +232,7 @@ function buildKnownSkuContext(
 
   const register = (value?: string | null) => {
     if (!value || isSetSku(value)) return
-    const sku = normalizeReorderSku(value)
+    const sku = normalizeDemandSku(value)
     const model = getModelFromReorderSku(sku)
     if (!sku || !model || model === '-' || model === 'SET') return
 
@@ -247,7 +266,7 @@ function expandAllColorsForModel(
   )
 
   return colors
-    .map((colorCode) => normalizeReorderSku(`${model}_${colorCode}_${size}`))
+    .map((colorCode) => normalizeDemandSku(`${model}_${colorCode}_${normalizeDemandSize(size)}`))
     .filter((sku) => context.knownSkus.has(sku))
     .map((sku) => ({ sku, multiplier: 1 }))
 }
@@ -265,13 +284,13 @@ function expandSetSku(
   if (legacyNSetMatch) {
     return expandAllColorsForModel(
       legacyNSetMatch[1],
-      legacyNSetMatch[3],
+      normalizeDemandSize(legacyNSetMatch[3]),
       context
     )
   }
 
   if (!source.startsWith('SET_')) {
-    const sku = normalizeReorderSku(source)
+    const sku = normalizeDemandSku(source)
     return sku ? [{ sku, multiplier: 1 }] : []
   }
 
@@ -290,7 +309,7 @@ function expandSetSku(
       if (!match) return []
       const model = resolveKnownModel(match[1], context)
       if (!model) return []
-      const sku = normalizeReorderSku(`${model}_${match[2]}_${match[3]}`)
+      const sku = normalizeDemandSku(`${model}_${match[2]}_${normalizeDemandSize(match[3])}`)
       if (!context.knownSkus.has(sku)) return []
       expanded.push({ sku, multiplier: 1 })
     }
@@ -304,7 +323,7 @@ function expandSetSku(
     const prefix = shorthandMatch[1]
     const firstModelToken = `${prefix}${shorthandMatch[2]}`
     const secondModelToken = `${prefix}${shorthandMatch[3]}`
-    const size = shorthandMatch[4]
+    const size = normalizeDemandSize(shorthandMatch[4])
     const first = expandAllColorsForModel(firstModelToken, size, context)
     const second = expandAllColorsForModel(secondModelToken, size, context)
     return first.length > 0 && second.length > 0 ? [...first, ...second] : []
@@ -314,7 +333,7 @@ function expandSetSku(
 
   // 3) 동일 모델 N종 세트 — 해당 모델의 모든 컬러를 같은 사이즈로 1개씩 환산
   if (parts.length === 3 && /^\d+SET$/.test(parts[1])) {
-    return expandAllColorsForModel(parts[0], parts[2], context)
+    return expandAllColorsForModel(parts[0], normalizeDemandSize(parts[2]), context)
   }
 
   // 1, 2) 동일 모델 + 2개 이상 색상 조합
@@ -325,7 +344,7 @@ function expandSetSku(
     if (colors.length < 2) return []
 
     const expanded = colors.map((colorCode) => ({
-      sku: normalizeReorderSku(`${model}_${colorCode}_${parts[2]}`),
+      sku: normalizeDemandSku(`${model}_${colorCode}_${normalizeDemandSize(parts[2])}`),
       multiplier: 1,
     }))
     return expanded.every((item) => context.knownSkus.has(item.sku))
@@ -617,7 +636,10 @@ export function buildDemandDailyExportRows(
     const date = toDateOnly(dateValue)
     if (!date || date < startDate || date > endDate) return
 
-    const sourceSku = normalizeSourceSku(sourceSkuValue)
+    const sourceSku = String(sourceSkuValue || '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '')
     const expandedRows = expandSetSku(sourceSkuValue, context)
     if (expandedRows.length === 0) return
     const sourceType: '일반' | 'SET환산' = isSetSku(sourceSkuValue)
@@ -762,7 +784,7 @@ export function buildDemandRecommendations(
 
   stockRows.forEach((row) => {
     if (isSetSku(row.sku)) return
-    const sku = normalizeReorderSku(row.sku)
+    const sku = normalizeDemandSku(row.sku)
     const model = getModelFromReorderSku(sku)
     if (!sku || !model || model === '-' || model === 'SET') return
 

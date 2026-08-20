@@ -72,6 +72,7 @@ function exportSamplesByDate(
     }`,
     수량: Number(sample.quantity || sample.qty || 0),
     비고: sample.note || sample.memo || '',
+    구분: sample.status || '',
   }))
 
   const worksheet = XLSX.utils.json_to_sheet(rows)
@@ -98,6 +99,7 @@ async function exportSamplesByDateAsXlsm(
     }`,
     수량: Number(sample.quantity || sample.qty || 0),
     비고: sample.note || sample.memo || '',
+    구분: sample.status || '',
   }))
 
   const templateRes = await fetch('/excel/sample-list-template.xlsm')
