@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import * as XLSX from 'xlsx'
 import {
   calcAverageOrderAmount,
   calcGrowthRate,
@@ -38,6 +39,17 @@ import {
 
 const supabase = createClient()
 
+const SALES_STATS_TEMPLATE_PATH =
+  '/excel/sales-stats-template-base.xlsm'
+
+const SALES_STATS_SHEETS = [
+  '일자별 순매출',
+  '쇼핑몰별 순매출',
+  '모델별 TOP100',
+  'SKU별 TOP100',
+] as const
+
+
 function formatNumber(value: number) {
   return Number(value || 0).toLocaleString('ko-KR')
 }
@@ -53,6 +65,151 @@ type SortKey =
   | 'avgNetAmount'
   | 'returnQty'
   | 'cancelQty'
+
+type WorksheetColumn =
+  | number
+  | {
+      wch: number
+      hidden?: boolean
+    }
+
+function sanitizeFilePart(value: string) {
+  return String(value || '')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '_')
+    .slice(0, 60)
+}
+
+function makeSalesStatsFileName(
+  prefix: string,
+  startDate: string,
+  endDate: string
+) {
+  return `${sanitizeFilePart(prefix)}_${startDate}_${endDate}.xlsm`
+}
+
+function toDateSheetRows(rows: NetSalesSummaryRow[]) {
+  return rows.map((item) => ({
+    일자: item.label,
+    순출고수량: Number(item.netQty || 0),
+    순매출금액: Number(item.netAmount || 0),
+    '평균 순판매가': Math.round(Number(item.avgNetAmount || 0)),
+  }))
+}
+
+function toShopSheetRows(rows: NetSalesSummaryRow[]) {
+  return rows.map((item) => ({
+    쇼핑몰: item.label,
+    순출고수량: Number(item.netQty || 0),
+    순매출금액: Number(item.netAmount || 0),
+    '평균 순판매가': Math.round(Number(item.avgNetAmount || 0)),
+  }))
+}
+
+function toRankSheetRows(
+  rows: NetSalesSummaryRow[],
+  labelHeader: '품번코드' | 'SKU',
+  imageUrls: Map<string, string>,
+  targetType: 'model' | 'sku'
+) {
+  return rows.map((item, index) => ({
+    순위: index + 1,
+    [labelHeader]: item.label,
+    '이미지 URL':
+      targetType === 'model'
+        ? resolveProductImage(imageUrls, { modelName: item.label }) || ''
+        : resolveProductImage(imageUrls, { sku: item.label }) || '',
+    이미지: '',
+    주문수량: Number(item.orderQty || 0),
+    반품수량: Number(item.returnQty || 0),
+    취소수량: Number(item.cancelQty || 0),
+    순출고수량: Number(item.netQty || 0),
+    순매출금액: Number(item.netAmount || 0),
+    '평균 순판매가': Math.round(Number(item.avgNetAmount || 0)),
+  }))
+}
+
+function applyWorksheetLayout(
+  worksheet: XLSX.WorkSheet,
+  columns: WorksheetColumn[]
+) {
+  worksheet['!cols'] = columns.map((col) => {
+    if (typeof col === 'number') {
+      return { wch: col }
+    }
+
+    return {
+      wch: col.wch,
+      hidden: col.hidden,
+    }
+  })
+}
+
+
+async function loadSalesStatsTemplateWorkbook() {
+  const response = await fetch(SALES_STATS_TEMPLATE_PATH)
+
+  if (!response.ok) {
+    throw new Error(
+      `주문통계 매크로 템플릿을 불러오지 못했습니다. (${response.status})`
+    )
+  }
+
+  const buffer = await response.arrayBuffer()
+  const workbook = XLSX.read(buffer, {
+    type: 'array',
+    bookVBA: true,
+    cellStyles: true,
+  })
+
+  if (!(workbook as any).vbaraw) {
+    throw new Error(
+      '주문통계 템플릿에 VBA 프로젝트가 없습니다. sales-stats-template-base.xlsm을 확인해 주세요.'
+    )
+  }
+
+  const missingSheets = SALES_STATS_SHEETS.filter(
+    (sheetName) => !workbook.Sheets[sheetName]
+  )
+
+  if (missingSheets.length > 0) {
+    throw new Error(
+      `주문통계 템플릿에 필요한 시트가 없습니다: ${missingSheets.join(', ')}`
+    )
+  }
+
+  return workbook
+}
+
+function setWorksheetVisibility(
+  workbook: XLSX.WorkBook,
+  visibleSheetNames: string[]
+) {
+  const visibleSet = new Set(visibleSheetNames)
+  const workbookMeta = (workbook as any).Workbook
+
+  if (!workbookMeta) return
+
+  workbookMeta.Sheets = workbookMeta.Sheets || []
+
+  workbook.SheetNames.forEach((sheetName, index) => {
+    workbookMeta.Sheets[index] = workbookMeta.Sheets[index] || {}
+
+    // 0 = visible, 2 = VeryHidden
+    workbookMeta.Sheets[index].Hidden = visibleSet.has(sheetName) ? 0 : 2
+  })
+}
+
+function writeMacroWorkbook(
+  workbook: XLSX.WorkBook,
+  fileName: string
+) {
+  XLSX.writeFile(workbook, fileName, {
+    bookType: 'xlsm',
+    bookVBA: true,
+    cellStyles: true,
+  })
+}
 
 export function SalesStatsManager() {
   const defaultRange = getPeriodRange('week')
@@ -71,6 +228,7 @@ export function SalesStatsManager() {
   const [prevClaimRows, setPrevClaimRows] = useState<OpsClaimRow[]>([])
 
   const [loading, setLoading] = useState(false)
+  const [imageLoading, setImageLoading] = useState(false)
 
   const [dateSortKey, setDateSortKey] =
     useState<SortKey>('netQty')
@@ -223,7 +381,9 @@ export function SalesStatsManager() {
       setRocketAmount(appliedRocketAmount)
       setRocketQty(appliedRocketQty)
     } catch (error: any) {
-      alert(`주문통계 조회 실패\n\n${error.message}`)
+      alert(`주문통계 조회 실패
+
+${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -277,7 +437,6 @@ export function SalesStatsManager() {
 
   const prevQty = sumSalesQty(prevRows)
   const prevAmount = sumSalesAmount(prevRows)
-  const prevAvg = calcAverageOrderAmount(prevRows)
 
   const cancelRows = useMemo(
     () => getCancelRows(claimRows),
@@ -335,10 +494,6 @@ export function SalesStatsManager() {
   const prevNetAvg =
     prevNetQty > 0 ? prevNetAmount / prevNetQty : 0
 
-  const qtyGrowth = calcGrowthRate(currentQty, prevQty)
-  const amountGrowth = calcGrowthRate(currentAmount, prevAmount)
-  const avgGrowth = calcGrowthRate(currentAvg, prevAvg)
-
   const netQtyGrowth = calcGrowthRate(
     netQty,
     prevNetQty
@@ -382,7 +537,7 @@ export function SalesStatsManager() {
     [rows, claimRows, shopSortKey]
   )
 
-  const modelTop = useMemo(
+  const modelRankRows = useMemo(
     () =>
       sortSummaryRows(
         buildNetSalesSummary(
@@ -392,11 +547,11 @@ export function SalesStatsManager() {
           (row) => getModelFromSku(row.sku)
         ),
         modelSortKey
-      ).slice(0, 20),
+      ),
     [rows, claimRows, modelSortKey]
   )
 
-  const skuTop = useMemo(
+  const skuRankRows = useMemo(
     () =>
       sortSummaryRows(
         buildNetSalesSummary(
@@ -406,14 +561,215 @@ export function SalesStatsManager() {
           (row) => String(row.sku || '-')
         ),
         skuSortKey
-      ).slice(0, 20),
+      ),
     [rows, claimRows, skuSortKey]
   )
 
+  const modelTop = useMemo(
+    () => modelRankRows.slice(0, 20),
+    [modelRankRows]
+  )
+
+  const skuTop = useMemo(
+    () => skuRankRows.slice(0, 20),
+    [skuRankRows]
+  )
+
+  const modelTop100 = useMemo(
+    () => modelRankRows.slice(0, 100),
+    [modelRankRows]
+  )
+
+  const skuTop100 = useMemo(
+    () => skuRankRows.slice(0, 100),
+    [skuRankRows]
+  )
+
+  async function fetchTopRankImageMap() {
+    const targets = [
+      ...modelTop100.map((item) => ({ modelName: item.label })),
+      ...skuTop100.map((item) => ({ sku: item.label })),
+    ]
+
+    if (targets.length === 0) {
+      return new Map<string, string>()
+    }
+
+    return fetchProductImageMap(supabase, targets)
+  }
+
+  async function downloadSectionExcel(
+    section: 'date' | 'shop' | 'model' | 'sku'
+  ) {
+    try {
+      let sheetName = ''
+      let fileLabel = ''
+      let data: Record<string, string | number>[] = []
+      let widths: WorksheetColumn[] = []
+
+      if (section === 'date') {
+        sheetName = '일자별 순매출'
+        fileLabel = '일자별_순매출'
+        data = toDateSheetRows(dateRows)
+        widths = [14, 14, 18, 16]
+      } else if (section === 'shop') {
+        sheetName = '쇼핑몰별 순매출'
+        fileLabel = '쇼핑몰별_순매출'
+        data = toShopSheetRows(shopRows)
+        widths = [22, 14, 18, 16]
+      } else if (section === 'model') {
+        setImageLoading(true)
+        const exportImageMap = await fetchTopRankImageMap()
+        sheetName = '모델별 TOP100'
+        fileLabel = '모델별_TOP100'
+        data = toRankSheetRows(
+          modelTop100,
+          '품번코드',
+          exportImageMap,
+          'model'
+        )
+        widths = [
+          8,
+          22,
+          { wch: 48, hidden: true },
+          18,
+          12,
+          12,
+          12,
+          14,
+          18,
+          16,
+        ]
+      } else {
+        setImageLoading(true)
+        const exportImageMap = await fetchTopRankImageMap()
+        sheetName = 'SKU별 TOP100'
+        fileLabel = 'SKU별_TOP100'
+        data = toRankSheetRows(
+          skuTop100,
+          'SKU',
+          exportImageMap,
+          'sku'
+        )
+        widths = [
+          8,
+          30,
+          { wch: 48, hidden: true },
+          18,
+          12,
+          12,
+          12,
+          14,
+          18,
+          16,
+        ]
+      }
+
+      const workbook = await loadSalesStatsTemplateWorkbook()
+      const worksheet = XLSX.utils.json_to_sheet(data)
+
+      applyWorksheetLayout(worksheet, widths)
+      workbook.Sheets[sheetName] = worksheet
+
+      // 개별 다운로드는 선택한 시트만 표시한다.
+      // 나머지는 삭제하지 않고 VeryHidden 처리해 VBA 구조를 보존한다.
+      setWorksheetVisibility(workbook, [sheetName])
+
+      writeMacroWorkbook(
+        workbook,
+        makeSalesStatsFileName(fileLabel, startDate, endDate)
+      )
+    } catch (error: any) {
+      alert(`Excel 다운로드 실패\n\n${error?.message || error}`)
+    } finally {
+      setImageLoading(false)
+    }
+  }
+
+  async function downloadAllExcel() {
+    setImageLoading(true)
+
+    try {
+      const exportImageMap = await fetchTopRankImageMap()
+      const workbook = await loadSalesStatsTemplateWorkbook()
+
+      const dateSheet = XLSX.utils.json_to_sheet(
+        toDateSheetRows(dateRows)
+      )
+      applyWorksheetLayout(dateSheet, [14, 14, 18, 16])
+      workbook.Sheets['일자별 순매출'] = dateSheet
+
+      const shopSheet = XLSX.utils.json_to_sheet(
+        toShopSheetRows(shopRows)
+      )
+      applyWorksheetLayout(shopSheet, [22, 14, 18, 16])
+      workbook.Sheets['쇼핑몰별 순매출'] = shopSheet
+
+      const modelSheet = XLSX.utils.json_to_sheet(
+        toRankSheetRows(
+          modelTop100,
+          '품번코드',
+          exportImageMap,
+          'model'
+        )
+      )
+      applyWorksheetLayout(modelSheet, [
+        8,
+        22,
+        { wch: 48, hidden: true },
+        18,
+        12,
+        12,
+        12,
+        14,
+        18,
+        16,
+      ])
+      workbook.Sheets['모델별 TOP100'] = modelSheet
+
+      const skuSheet = XLSX.utils.json_to_sheet(
+        toRankSheetRows(
+          skuTop100,
+          'SKU',
+          exportImageMap,
+          'sku'
+        )
+      )
+      applyWorksheetLayout(skuSheet, [
+        8,
+        30,
+        { wch: 48, hidden: true },
+        18,
+        12,
+        12,
+        12,
+        14,
+        18,
+        16,
+      ])
+      workbook.Sheets['SKU별 TOP100'] = skuSheet
+
+      // 전체 다운로드는 네 개 시트를 모두 표시한다.
+      setWorksheetVisibility(
+        workbook,
+        Array.from(SALES_STATS_SHEETS)
+      )
+
+      writeMacroWorkbook(
+        workbook,
+        makeSalesStatsFileName('주문통계_전체', startDate, endDate)
+      )
+    } catch (error: any) {
+      alert(`전체 Excel 다운로드 실패\n\n${error?.message || error}`)
+    } finally {
+      setImageLoading(false)
+    }
+  }
+
   useEffect(() => {
     const targets = [
-      ...modelTop.map((item) => ({ modelName: item.label })),
-      ...skuTop.map((item) => ({ sku: item.label })),
+      ...modelTop100.map((item) => ({ modelName: item.label })),
+      ...skuTop100.map((item) => ({ sku: item.label })),
     ]
 
     if (targets.length === 0) {
@@ -422,6 +778,8 @@ export function SalesStatsManager() {
     }
 
     let cancelled = false
+    setImageLoading(true)
+
     void fetchProductImageMap(supabase, targets)
       .then((imageMap) => {
         if (!cancelled) setImageUrls(imageMap)
@@ -430,11 +788,14 @@ export function SalesStatsManager() {
         console.error('주문통계 이미지 조회 실패:', error)
         if (!cancelled) setImageUrls(new Map())
       })
+      .finally(() => {
+        if (!cancelled) setImageLoading(false)
+      })
 
     return () => {
       cancelled = true
     }
-  }, [modelTop, skuTop])
+  }, [modelTop100, skuTop100])
 
   return (
     <div className="space-y-6">
@@ -504,14 +865,25 @@ export function SalesStatsManager() {
             />
           </div>
 
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <button
               type="button"
               onClick={loadData}
               disabled={loading}
-              className="h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-50"
+              className="h-10 min-w-[88px] flex-1 rounded-md bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-50"
             >
               {loading ? '조회 중...' : '조회'}
+            </button>
+
+            <button
+              type="button"
+              onClick={downloadAllExcel}
+              disabled={loading || imageLoading || rows.length === 0}
+              className="flex h-10 min-w-[112px] items-center justify-center gap-2 rounded-md border border-green-700 bg-white px-3 text-sm font-medium text-green-700 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-40"
+              title="조회 결과 전체 Excel 다운로드"
+            >
+              <ExcelIcon className="h-4 w-4" />
+              전체 Excel
             </button>
           </div>
         </div>
@@ -622,6 +994,7 @@ export function SalesStatsManager() {
             formatNumber(item.netAmount),
             formatNumber(Math.round(item.avgNetAmount)),
           ])}
+          onDownload={() => void downloadSectionExcel('date')}
         />
 
         <SummaryTable
@@ -640,6 +1013,7 @@ export function SalesStatsManager() {
             formatNumber(item.netAmount),
             formatNumber(Math.round(item.avgNetAmount)),
           ])}
+          onDownload={() => void downloadSectionExcel('shop')}
         />
       </section>
 
@@ -670,6 +1044,8 @@ export function SalesStatsManager() {
             (item) =>
               resolveProductImage(imageUrls, { modelName: item.label }) || ''
           )}
+          onDownload={() => void downloadSectionExcel('model')}
+          downloadDisabled={imageLoading}
         />
 
         <SummaryTable
@@ -697,37 +1073,10 @@ export function SalesStatsManager() {
           imageUrls={skuTop.map(
             (item) => resolveProductImage(imageUrls, { sku: item.label }) || ''
           )}
+          onDownload={() => void downloadSectionExcel('sku')}
+          downloadDisabled={imageLoading}
         />
       </section>
-    </div>
-  )
-}
-
-function StatCard({
-  title,
-  value,
-  sub,
-  growth,
-}: {
-  title: string
-  value: string
-  sub?: string
-  growth?: number
-}) {
-  const growthClass =
-    growth === undefined
-      ? 'text-gray-500'
-      : growth > 0
-        ? 'text-blue-600'
-        : growth < 0
-          ? 'text-red-600'
-          : 'text-gray-500'
-
-  return (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm">
-      <p className="text-sm text-gray-500">{title}</p>
-      <p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
-      {sub && <p className={`mt-2 text-xs ${growthClass}`}>{sub}</p>}
     </div>
   )
 }
@@ -814,6 +1163,26 @@ function DetailStatCard({
   )
 }
 
+function ExcelIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="m8.5 12 4 6" />
+      <path d="m12.5 12-4 6" />
+    </svg>
+  )
+}
+
 function SummaryTable({
   title,
   headers,
@@ -821,6 +1190,8 @@ function SummaryTable({
   sortKey,
   onSortKeyChange,
   imageUrls,
+  onDownload,
+  downloadDisabled,
 }: {
   title: string
   headers: string[]
@@ -828,23 +1199,38 @@ function SummaryTable({
   sortKey: SortKey
   onSortKeyChange: (key: SortKey) => void
   imageUrls?: string[]
+  onDownload: () => void
+  downloadDisabled?: boolean
 }) {
   return (
     <section className="rounded-2xl border bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-semibold text-gray-900">{title}</h2>
 
-        <select
-          value={sortKey}
-          onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
-          className="h-8 rounded-md border px-2 text-xs"
-        >
-          <option value="netQty">순출고수량순</option>
-          <option value="netAmount">순매출금액순</option>
-          <option value="avgNetAmount">평균 순판매가순</option>
-          <option value="returnQty">반품수량순</option>
-          <option value="cancelQty">취소수량순</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={sortKey}
+            onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
+            className="h-8 rounded-md border px-2 text-xs"
+          >
+            <option value="netQty">순출고수량순</option>
+            <option value="netAmount">순매출금액순</option>
+            <option value="avgNetAmount">평균 순판매가순</option>
+            <option value="returnQty">반품수량순</option>
+            <option value="cancelQty">취소수량순</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={downloadDisabled || rows.length === 0}
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-green-700 text-green-700 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title={`${title} Excel 다운로드`}
+            aria-label={`${title} Excel 다운로드`}
+          >
+            <ExcelIcon className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="mt-4 max-h-[520px] overflow-auto">
         <table className="w-full border-collapse text-sm">
