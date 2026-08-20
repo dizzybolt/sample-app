@@ -16,6 +16,7 @@ import type { SampleEntry } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatNumber } from '@/lib/format'
+import { diffKoreaCalendarDays, toKoreaDate } from '@/lib/date-utils'
 import { DashboardStatusPanel } from '@/components/dashboard-status-panel'
 
 export const dynamic = 'force-dynamic'
@@ -80,20 +81,11 @@ function countBy(
 }
 
 function diffDays(dateString?: string | null) {
-  if (!dateString) return null
-
-  const base = new Date(dateString)
-  const today = new Date()
-
-  if (Number.isNaN(base.getTime())) return null
-
-  const diff = today.getTime() - base.getTime()
-  return Math.floor(diff / (1000 * 60 * 60 * 24))
+  return diffKoreaCalendarDays(dateString)
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return '-'
-  return value.slice(0, 10)
+  return toKoreaDate(value) || '-'
 }
 
 function getLongWaitingItems(samples: DashboardSample[]) {

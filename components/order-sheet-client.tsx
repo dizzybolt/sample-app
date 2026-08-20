@@ -20,6 +20,7 @@ import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import { Download } from 'lucide-react'
 import { formatNumber } from '@/lib/format'
+import { getKoreaToday } from '@/lib/date-utils'
 
 interface OrderSheetClientProps {
   date: string
@@ -35,7 +36,7 @@ interface OrderSheetClientProps {
 }
 
 function getToday() {
-  return new Date().toISOString().slice(0, 10)
+  return getKoreaToday()
 }
 
 export function OrderSheetClient({

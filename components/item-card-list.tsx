@@ -6,6 +6,7 @@ import { Copy, Search, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ColorCode, ItemCardStatus, SampleEntry, Studio } from '@/lib/types'
 import { groupSamplesByChinaCode } from '@/lib/order-utils'
+import { getKoreaToday, toKoreaDate } from '@/lib/date-utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -47,12 +48,11 @@ const ACTION_STATUS_OPTIONS: UserActionStatus[] = [
 ]
 
 function getToday() {
-  return new Date().toISOString().slice(0, 10)
+  return getKoreaToday()
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return '-'
-  return value.slice(0, 10)
+  return toKoreaDate(value) || '-'
 }
 
 function formatPrice(value?: number | null) {

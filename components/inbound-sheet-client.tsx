@@ -24,6 +24,7 @@ import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import * as XLSX from 'xlsx'
 import { Download } from 'lucide-react'
 import { formatNumber } from '@/lib/format'
+import { getKoreaToday } from '@/lib/date-utils'
 import {
   Select,
   SelectContent,
@@ -46,7 +47,7 @@ interface InboundSheetClientProps {
 }
 
 function getToday() {
-  return new Date().toISOString().slice(0, 10)
+  return getKoreaToday()
 }
 
 function toKoreaDate(value?: string | null) {
@@ -938,8 +939,8 @@ export function InboundSheetClient({
 
     const inventoryWorkDate =
       selectedBatch.inbound_date ||
-      selectedBatch.created_at?.slice(0, 10) ||
-      new Date().toISOString().slice(0, 10)
+      toKoreaDate(selectedBatch.created_at) ||
+      getKoreaToday()
 
     const supabase = createClient()
 

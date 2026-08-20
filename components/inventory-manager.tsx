@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { batchUpsert, type BulkProgress } from '@/lib/bulk-upload'
+import { getKoreaToday } from '@/lib/date-utils'
 import {
   fetchProductImageMap,
   getImageTarget,
@@ -447,7 +448,7 @@ export function InventoryManager() {
       percent: 0,
     })
 
-    const uploadWorkDate = new Date().toISOString().slice(0, 10)
+    const uploadWorkDate = getKoreaToday()
 
     const parsedRows = rows
       .map((row) => {
@@ -793,8 +794,8 @@ export function InventoryManager() {
     XLSX.utils.book_append_sheet(workbook, worksheet, '전체재고목록')
 
     const fileName = keyword 
-      ? `전체재고검색결과_${new Date().toISOString().slice(0, 10)}.xlsx` 
-      : `전체재고목록_${new Date().toISOString().slice(0, 10)}.xlsx`
+      ? `전체재고검색결과_${getKoreaToday()}.xlsx` 
+      : `전체재고목록_${getKoreaToday()}.xlsx`
 
     XLSX.writeFile(workbook, fileName)
   }

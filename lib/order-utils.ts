@@ -1,25 +1,16 @@
 import type { SampleEntry, SampleGroup, OrderDateGroup } from '@/lib/types'
+import { formatKoreaDate, toKoreaDate } from '@/lib/date-utils'
 
 export function normalizeDateKey(dateString?: string | null) {
   if (!dateString) return 'NO_DATE'
-  try {
-    return new Date(dateString).toISOString().slice(0, 10)
-  } catch {
-    return 'NO_DATE'
-  }
+
+  return toKoreaDate(dateString) || 'NO_DATE'
 }
 
 export function formatDateLabel(dateString?: string | null) {
   if (!dateString || dateString === 'NO_DATE') return '발주일 없음'
-  try {
-    const d = new Date(dateString)
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    return `${yyyy}.${mm}.${dd}`
-  } catch {
-    return dateString || ''
-  }
+
+  return formatKoreaDate(dateString) || dateString || ''
 }
 
 export function groupSamplesByChinaCode(items: SampleEntry[]): SampleGroup[] {
