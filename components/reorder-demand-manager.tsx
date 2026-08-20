@@ -45,6 +45,7 @@ const FETCH_CHUNK_SIZE = 1000
 const MODEL_PAGE_SIZE = 30
 
 const MACRO_TEMPLATE_PATH = '/excel/order-sheet-template.xlsm'
+const DEMAND_TEMPLATE_PATH = '/excel/reorder-demand-template.xlsm'
 
 
 type DemandSourceState = {
@@ -660,6 +661,60 @@ export function ReorderDemandManager() {
       return
     }
 
+    const setCellValue = (
+      sheet: XLSX.WorkSheet,
+      address: string,
+      value: string | number | null | undefined,
+      styleFrom?: string
+    ) => {
+      const current = sheet[address] as any
+      const source = (styleFrom ? sheet[styleFrom] : current) as any
+      const cell: any = {
+        t: typeof value === 'number' ? 'n' : 's',
+        v: value ?? '',
+      }
+
+      if (source?.s !== undefined) cell.s = source.s
+      if (source?.z !== undefined) cell.z = source.z
+
+      sheet[address] = cell
+    }
+
+    const clearSheetValues = (sheet: XLSX.WorkSheet) => {
+      if (!sheet['!ref']) return
+      const range = XLSX.utils.decode_range(sheet['!ref'])
+      for (let row = range.s.r; row <= range.e.r; row += 1) {
+        for (let col = range.s.c; col <= range.e.c; col += 1) {
+          const address = XLSX.utils.encode_cell({ r: row, c: col })
+          const cell = sheet[address] as any
+          if (!cell) continue
+          delete cell.f
+          delete cell.w
+          delete cell.l
+          cell.t = 's'
+          cell.v = ''
+        }
+      }
+    }
+
+    const copyRowStyles = (
+      sheet: XLSX.WorkSheet,
+      sourceRow: number,
+      targetRow: number,
+      startCol: number,
+      endCol: number
+    ) => {
+      for (let col = startCol; col <= endCol; col += 1) {
+        const sourceAddress = XLSX.utils.encode_cell({ r: sourceRow - 1, c: col })
+        const targetAddress = XLSX.utils.encode_cell({ r: targetRow - 1, c: col })
+        const sourceCell = sheet[sourceAddress] as any
+        const targetCell = (sheet[targetAddress] || { t: 's', v: '' }) as any
+        if (sourceCell?.s !== undefined) targetCell.s = sourceCell.s
+        if (sourceCell?.z !== undefined) targetCell.z = sourceCell.z
+        sheet[targetAddress] = targetCell
+      }
+    }
+
     setExporting(true)
     try {
       const targets = model.skuRows.map((row) => ({
@@ -690,13 +745,45 @@ export function ReorderDemandManager() {
         dailyBySkuDate.set(key, (dailyBySkuDate.get(key) || 0) + row.netSalesQty)
       })
 
-      const response = await fetch(MACRO_TEMPLATE_PATH)
+      const response = await fetch(DEMAND_TEMPLATE_PATH)
       if (!response.ok) {
-        throw new Error('매크로 엑셀 템플릿을 불러오지 못했습니다.')
+        throw new Error('시즌수요 발주 템플릿을 불러오지 못했습니다.')
       }
       const buffer = await response.arrayBuffer()
-      const workbook = XLSX.read(buffer, { type: 'array', bookVBA: true })
-      const baseSheetName = workbook.SheetNames[0]
+      const workbook = XLSX.read(buffer, {
+        type: 'array',
+        bookVBA: true,
+        cellStyles: true,
+      })
+
+      // IMPORTANT: preserve the workbook VBA CodeName from the template.
+      // Workbook_Open is bound to that existing CodeName inside vbaProject.bin.
+      // Changing WBProps.CodeName (for example to `ThisWorkbook`) can stop
+      // Workbook_Open from firing even though the VBA project itself is kept.
+      //
+      // Only worksheet CodeNames need sanitizing.  Visible Korean sheet names
+      // such as `2_일자별판매` may start with a number and are not valid VBA
+      // identifiers, which makes Excel repair sheetPr records on open.
+      const workbookMeta = (workbook as any).Workbook
+      if (workbookMeta) {
+        workbookMeta.Sheets = workbookMeta.Sheets || []
+
+        workbook.SheetNames.forEach((_sheetName, index) => {
+          workbookMeta.Sheets[index] = workbookMeta.Sheets[index] || {}
+          workbookMeta.Sheets[index].CodeName = `Sheet${index + 1}`
+        })
+      }
+
+      const calculationSheetName = workbook.SheetNames[0]
+      const calculationSheet = workbook.Sheets[calculationSheetName]
+      const dailySheet = workbook.Sheets['2_일자별판매']
+      const rawSheet = workbook.Sheets['3_원본상세']
+
+      if (!calculationSheet || !dailySheet || !rawSheet) {
+        throw new Error(
+          '시즌수요 템플릿에 Sheet1 / 2_일자별판매 / 3_원본상세 시트가 필요합니다.'
+        )
+      }
 
       const targetDemandTotal = sortedSkuRows.reduce(
         (sum, row) => sum + Number(row.targetDemandQty || 0),
@@ -706,44 +793,89 @@ export function ReorderDemandManager() {
         (sum, row) => sum + Number(row.recommendedQty || 0),
         0
       )
+      const currentStockTotal = sortedSkuRows.reduce(
+        (sum, row) => sum + Number(row.currentStockQty || 0),
+        0
+      )
+      const quantityCheckTotal = sortedSkuRows.reduce(
+        (sum, row) =>
+          sum + Math.max(row.targetDemandQty - row.currentStockQty, 0),
+        0
+      )
+      const periodNetSalesTotal = sortedSkuRows.reduce(
+        (sum, row) => sum + Number(row.periodNetSalesQty || 0),
+        0
+      )
       const periodDays = dates.length
       const dailyAverage = periodDays > 0 ? model.demandSalesQty / periodDays : 0
-      const calculationRows: (string | number | null)[][] = []
-      calculationRows.push([
-        '', '', '발주서 (초안)', '', '', '', '',
-        '판매수량', '', model.demandSalesQty, '',
-        '목표수요 합계', '', '', targetDemandTotal,
-      ])
-      calculationRows.push([
-        '', '',
-        `[품번 : ${model.model}] [산정방식 : ${getMethodLabel(model.calculationMethod)}] [적용기간 : ${periodStart} ~ ${periodEnd} (${periodDays}일)]`,
-        '', '', '', '',
-        '판매일수', '', periodDays, '',
-        '추천발주 합계', '', '', recommendedTotal,
-      ])
-      calculationRows.push([
-        '', '', '', '', '', '', '', '일판매', '',
-        Number(dailyAverage.toFixed(2)), '', '', '', '', '',
-      ])
-      calculationRows.push([
-        '', '', '', '', '', '', '', '예상 판매일수', '', periodDays,
-        '', '', '', '', '',
-      ])
-      calculationRows.push([
-        '', '', '', '', '', '', '', '예상 판매수량', '', targetDemandTotal,
-        '', '', '', '', '',
-      ])
-      calculationRows.push(Array(15).fill(''))
-      calculationRows.push([
-        '이미지URL', '썸네일', '품번', '품번명', '칼라', 'SIZE',
-        '기간판매수량\n(순판매)', '비율(전체)', '판매비중\n(전사기준,참고)',
-        '현재고', '목표수요\n(예상수요)', '수량체크\n(목표수요-현재고)',
-        '발주수량', '모델판단', '긴급도',
-      ])
 
-      sortedSkuRows.forEach((row) => {
-        const quantityCheck = Math.max(row.targetDemandQty - row.currentStockQty, 0)
-        calculationRows.push([
+      // ------------------------------------------------------------
+      // 1) Calculation sheet: keep the template layout / VBA intact.
+      // ------------------------------------------------------------
+      const calcTemplateRef = calculationSheet['!ref'] || 'A1:O26'
+      const calcTemplateRange = XLSX.utils.decode_range(calcTemplateRef)
+      const calcTemplateTotalRow = calcTemplateRange.e.r + 1
+      const calcDataStyleRow = Math.min(8, calcTemplateTotalRow - 1)
+
+      clearSheetValues(calculationSheet)
+
+      setCellValue(calculationSheet, 'C1', '발주서 (초안)')
+      setCellValue(calculationSheet, 'H1', '판매수량')
+      setCellValue(calculationSheet, 'J1', model.demandSalesQty)
+      setCellValue(calculationSheet, 'L1', '목표수요 합계')
+      setCellValue(calculationSheet, 'O1', targetDemandTotal)
+
+      setCellValue(
+        calculationSheet,
+        'C2',
+        `[품번 : ${model.model}] [산정방식 : ${getMethodLabel(
+          model.calculationMethod
+        )}] [적용기간 : ${periodStart} ~ ${periodEnd} (${periodDays}일)]`
+      )
+      setCellValue(calculationSheet, 'H2', '판매일수')
+      setCellValue(calculationSheet, 'J2', periodDays)
+      setCellValue(calculationSheet, 'L2', '추천발주 합계')
+      setCellValue(calculationSheet, 'O2', recommendedTotal)
+      setCellValue(calculationSheet, 'H3', '일판매')
+      setCellValue(calculationSheet, 'J3', Number(dailyAverage.toFixed(2)))
+      setCellValue(calculationSheet, 'H4', '예상 판매일수')
+      setCellValue(calculationSheet, 'J4', periodDays)
+      setCellValue(calculationSheet, 'H5', '예상 판매수량')
+      setCellValue(calculationSheet, 'J5', targetDemandTotal)
+
+      const calcHeaders = [
+        '이미지URL',
+        '썸네일',
+        '품번',
+        '품번명',
+        '칼라',
+        'SIZE',
+        '기간판매수량\n(순판매)',
+        '비율(전체)',
+        '판매비중\n(전사기준,참고)',
+        '현재고',
+        '목표수요\n(예상수요)',
+        '수량체크\n(목표수요-현재고)',
+        '발주수량',
+        '모델판단',
+        '긴급도',
+      ]
+      calcHeaders.forEach((header, col) => {
+        setCellValue(
+          calculationSheet,
+          XLSX.utils.encode_cell({ r: 6, c: col }),
+          header
+        )
+      })
+
+      sortedSkuRows.forEach((row, index) => {
+        const excelRow = 8 + index
+        copyRowStyles(calculationSheet, calcDataStyleRow, excelRow, 0, 14)
+        const quantityCheck = Math.max(
+          row.targetDemandQty - row.currentStockQty,
+          0
+        )
+        const values: (string | number)[] = [
           resolveProductImage(imageMap, {
             modelName: model.model,
             colorCode: row.colorCode,
@@ -765,57 +897,111 @@ export function ReorderDemandManager() {
           row.recommendedQty,
           model.decision,
           model.urgency,
-        ])
+        ]
+        values.forEach((value, col) => {
+          setCellValue(
+            calculationSheet,
+            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
+            value,
+            XLSX.utils.encode_cell({ r: calcDataStyleRow - 1, c: col })
+          )
+        })
       })
-      calculationRows.push([
+
+      const calcTotalRow = 8 + sortedSkuRows.length
+      copyRowStyles(
+        calculationSheet,
+        calcTemplateTotalRow,
+        calcTotalRow,
+        0,
+        14
+      )
+      const totalValues: (string | number)[] = [
         '', '', '총    계', '', '', '',
-        sortedSkuRows.reduce((sum, row) => sum + row.periodNetSalesQty, 0),
-        '', '',
-        sortedSkuRows.reduce((sum, row) => sum + row.currentStockQty, 0),
-        targetDemandTotal,
-        sortedSkuRows.reduce(
-          (sum, row) =>
-            sum + Math.max(row.targetDemandQty - row.currentStockQty, 0),
-          0
-        ),
-        recommendedTotal, '', '',
-      ])
+        periodNetSalesTotal, '', '', currentStockTotal,
+        targetDemandTotal, quantityCheckTotal, recommendedTotal, '', '',
+      ]
+      totalValues.forEach((value, col) => {
+        setCellValue(
+          calculationSheet,
+          XLSX.utils.encode_cell({ r: calcTotalRow - 1, c: col }),
+          value,
+          XLSX.utils.encode_cell({ r: calcTemplateTotalRow - 1, c: col })
+        )
+      })
 
-      const calculationSheet = XLSX.utils.aoa_to_sheet(calculationRows)
-      calculationSheet['!cols'] = [
-        { wch: 42 }, { wch: 14 }, { wch: 18 }, { wch: 30 }, { wch: 10 },
-        { wch: 10 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 12 },
-        { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
-      ]
-      calculationSheet['!merges'] = [
-        XLSX.utils.decode_range('C1:F1'),
-        XLSX.utils.decode_range('C2:G2'),
-      ]
+      calculationSheet['!ref'] = `A1:O${calcTotalRow}`
       calculationSheet['!autofilter'] = {
-        ref: `A7:O${Math.max(calculationRows.length - 1, 7)}`,
+        ref: `A7:O${Math.max(calcTotalRow - 1, 7)}`,
       }
-      workbook.Sheets[baseSheetName] = calculationSheet
 
-      const dayHeaders = dates.map((date) => Number(date.slice(8, 10)))
-      const weekdayHeaders = dates.map(getKoreanWeekday)
-      const dailyMatrixRows: (string | number | null)[][] = [
-        [
-          '일자별 판매분석 (참고자료 원본)',
-          ...Array(dates.length + 7).fill(''),
-        ],
-        [
-          `[기준일자 : ${periodStart} ~ ${periodEnd}] [품번 : ${model.model} ~ ${model.model}]`,
-          ...Array(dates.length + 7).fill(''),
-        ],
-        Array(dates.length + 8).fill(''),
-        [
-          '품번', '품번명', '칼라', 'SIZE', ...dayHeaders,
-          '계', '누계', '판매율', '재고',
-        ],
-        ['', '', '', '', ...weekdayHeaders, '', '', '', ''],
-      ]
+      // ------------------------------------------------------------
+      // 2) Daily sales sheet: date columns grow/shrink dynamically.
+      //    Width/style of one date column in the template is reused.
+      // ------------------------------------------------------------
+      const dailyTemplateRange = XLSX.utils.decode_range(
+        dailySheet['!ref'] || 'A1:H6'
+      )
+      const dailyTemplateCols = [...(dailySheet['!cols'] || [])]
+      const templateSummaryStartCol = Math.max(
+        4,
+        dailyTemplateRange.e.c - 3
+      )
+      const dailyDataStyleRow = Math.min(6, dailyTemplateRange.e.r)
+      const dailyTotalStyleRow = dailyTemplateRange.e.r + 1
 
-      sortedSkuRows.forEach((row) => {
+      clearSheetValues(dailySheet)
+
+      const dailySummaryStartCol = 4 + dates.length
+      const dailyLastCol = dailySummaryStartCol + 3
+      const dailyTotalRow = 6 + sortedSkuRows.length
+
+      setCellValue(dailySheet, 'A1', '일자별 판매분석 (참고자료 원본)')
+      setCellValue(
+        dailySheet,
+        'A2',
+        `[기준일자 : ${periodStart} ~ ${periodEnd}] [품번 : ${model.model} ~ ${model.model}]`
+      )
+
+      const fixedHeaders = ['품번', '품번명', '칼라', 'SIZE']
+      fixedHeaders.forEach((header, col) => {
+        setCellValue(
+          dailySheet,
+          XLSX.utils.encode_cell({ r: 3, c: col }),
+          header
+        )
+      })
+
+      dates.forEach((date, index) => {
+        const col = 4 + index
+        const dayAddress = XLSX.utils.encode_cell({ r: 3, c: col })
+        const weekdayAddress = XLSX.utils.encode_cell({ r: 4, c: col })
+        setCellValue(dailySheet, dayAddress, Number(date.slice(8, 10)), 'E4')
+        setCellValue(dailySheet, weekdayAddress, getKoreanWeekday(date), 'E5')
+      })
+
+      const summaryHeaders = ['계', '누계', '판매율', '재고']
+      summaryHeaders.forEach((header, index) => {
+        const targetCol = dailySummaryStartCol + index
+        const sourceCol = templateSummaryStartCol + index
+        setCellValue(
+          dailySheet,
+          XLSX.utils.encode_cell({ r: 3, c: targetCol }),
+          header,
+          XLSX.utils.encode_cell({ r: 3, c: sourceCol })
+        )
+        setCellValue(
+          dailySheet,
+          XLSX.utils.encode_cell({ r: 4, c: targetCol }),
+          '',
+          XLSX.utils.encode_cell({ r: 4, c: sourceCol })
+        )
+      })
+
+      sortedSkuRows.forEach((row, index) => {
+        const excelRow = 6 + index
+        copyRowStyles(dailySheet, dailyDataStyleRow, excelRow, 0, 3)
+
         const dailyValues = dates.map(
           (date) => dailyBySkuDate.get(`${row.sku}\u0001${date}`) || 0
         )
@@ -823,19 +1009,53 @@ export function ReorderDemandManager() {
           (sum, qty) => sum + Number(qty || 0),
           0
         )
-        dailyMatrixRows.push([
+
+        const fixedValues: (string | number)[] = [
           model.model,
           '',
           row.colorCode,
           row.size,
-          ...dailyValues.map((qty) => (qty === 0 ? null : qty)),
+        ]
+        fixedValues.forEach((value, col) => {
+          setCellValue(
+            dailySheet,
+            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
+            value,
+            XLSX.utils.encode_cell({ r: dailyDataStyleRow - 1, c: col })
+          )
+        })
+
+        dailyValues.forEach((qty, dateIndex) => {
+          const col = 4 + dateIndex
+          setCellValue(
+            dailySheet,
+            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
+            qty === 0 ? '' : qty,
+            'E6'
+          )
+        })
+
+        const summaryValues: (string | number)[] = [
           total,
           row.periodNetSalesQty,
           model.demandSalesQty > 0
             ? row.periodNetSalesQty / model.demandSalesQty
             : 0,
           row.currentStockQty,
-        ])
+        ]
+        summaryValues.forEach((value, summaryIndex) => {
+          const targetCol = dailySummaryStartCol + summaryIndex
+          const sourceCol = templateSummaryStartCol + summaryIndex
+          setCellValue(
+            dailySheet,
+            XLSX.utils.encode_cell({ r: excelRow - 1, c: targetCol }),
+            value,
+            XLSX.utils.encode_cell({
+              r: dailyDataStyleRow - 1,
+              c: sourceCol,
+            })
+          )
+        })
       })
 
       const dailyTotals = dates.map((date) =>
@@ -845,60 +1065,133 @@ export function ReorderDemandManager() {
           0
         )
       )
-      dailyMatrixRows.push([
-        '총    계', '', '', '',
-        ...dailyTotals,
+
+      copyRowStyles(
+        dailySheet,
+        dailyTotalStyleRow,
+        dailyTotalRow,
+        0,
+        dailyLastCol
+      )
+      setCellValue(dailySheet, `A${dailyTotalRow}`, '총    계')
+      dailyTotals.forEach((qty, index) => {
+        setCellValue(
+          dailySheet,
+          XLSX.utils.encode_cell({
+            r: dailyTotalRow - 1,
+            c: 4 + index,
+          }),
+          qty,
+          `E${dailyTotalStyleRow}`
+        )
+      })
+      const dailyTotalSummary = [
         dailyTotals.reduce((sum, qty) => sum + qty, 0),
         model.demandSalesQty,
         '',
         model.currentStockQty,
-      ])
+      ]
+      dailyTotalSummary.forEach((value, index) => {
+        setCellValue(
+          dailySheet,
+          XLSX.utils.encode_cell({
+            r: dailyTotalRow - 1,
+            c: dailySummaryStartCol + index,
+          }),
+          value,
+          XLSX.utils.encode_cell({
+            r: dailyTotalStyleRow - 1,
+            c: templateSummaryStartCol + index,
+          })
+        )
+      })
 
-      const dailySheet = XLSX.utils.aoa_to_sheet(dailyMatrixRows)
+      const fixedWidths = [
+        dailyTemplateCols[0] || { wch: 18 },
+        dailyTemplateCols[1] || { wch: 30 },
+        dailyTemplateCols[2] || { wch: 9 },
+        dailyTemplateCols[3] || { wch: 9 },
+      ]
+      const dateWidth = dailyTemplateCols[4] || { wch: 5 }
+      const summaryWidths = Array.from({ length: 4 }, (_, index) =>
+        dailyTemplateCols[templateSummaryStartCol + index] || { wch: 10 }
+      )
       dailySheet['!cols'] = [
-        { wch: 18 }, { wch: 30 }, { wch: 9 }, { wch: 9 },
-        ...dates.map(() => ({ wch: 5 })),
-        { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        ...fixedWidths,
+        ...dates.map(() => ({ ...dateWidth })),
+        ...summaryWidths,
       ]
       dailySheet['!merges'] = [
         XLSX.utils.decode_range(
-          `A1:${XLSX.utils.encode_col(dates.length + 7)}1`
+          `A1:${XLSX.utils.encode_col(dailyLastCol)}1`
         ),
         XLSX.utils.decode_range(
-          `A2:${XLSX.utils.encode_col(dates.length + 7)}2`
+          `A2:${XLSX.utils.encode_col(dailyLastCol)}2`
         ),
       ]
+      dailySheet['!ref'] = `A1:${XLSX.utils.encode_col(
+        dailyLastCol
+      )}${dailyTotalRow}`
 
-      const rawDetailRows = dailyRows.map((row) => ({
-        일자: row.date,
-        원본SKU: row.sourceSku,
-        환산SKU: row.convertedSku,
-        모델명: row.model,
-        색상코드: row.colorCode,
-        사이즈: row.size,
-        유형: row.sourceType,
-        출고수량: row.salesQty,
-        클레임수량: row.claimQty,
-        순판매수량: row.netSalesQty,
-      }))
-      const rawSheet = XLSX.utils.json_to_sheet(rawDetailRows)
-      rawSheet['!cols'] = [
-        { wch: 12 }, { wch: 32 }, { wch: 28 }, { wch: 18 }, { wch: 10 },
-        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-      ]
-
-      workbook.SheetNames = workbook.SheetNames.filter(
-        (name) => name !== '2_일자별판매' && name !== '3_원본상세'
+      // ------------------------------------------------------------
+      // 3) Raw detail sheet: fixed columns, variable number of rows.
+      // ------------------------------------------------------------
+      const rawTemplateRange = XLSX.utils.decode_range(
+        rawSheet['!ref'] || 'A1:J2'
       )
-      delete workbook.Sheets['2_일자별판매']
-      delete workbook.Sheets['3_원본상세']
-      XLSX.utils.book_append_sheet(workbook, dailySheet, '2_일자별판매')
-      XLSX.utils.book_append_sheet(workbook, rawSheet, '3_원본상세')
+      const rawDataStyleRow = Math.min(2, rawTemplateRange.e.r + 1)
+      clearSheetValues(rawSheet)
+
+      const rawHeaders = [
+        '일자',
+        '원본SKU',
+        '환산SKU',
+        '모델명',
+        '색상코드',
+        '사이즈',
+        '유형',
+        '출고수량',
+        '클레임수량',
+        '순판매수량',
+      ]
+      rawHeaders.forEach((header, col) => {
+        setCellValue(
+          rawSheet,
+          XLSX.utils.encode_cell({ r: 0, c: col }),
+          header
+        )
+      })
+
+      dailyRows.forEach((row, index) => {
+        const excelRow = 2 + index
+        copyRowStyles(rawSheet, rawDataStyleRow, excelRow, 0, 9)
+        const values: (string | number)[] = [
+          row.date,
+          row.sourceSku,
+          row.convertedSku,
+          row.model,
+          row.colorCode,
+          row.size,
+          row.sourceType,
+          row.salesQty,
+          row.claimQty,
+          row.netSalesQty,
+        ]
+        values.forEach((value, col) => {
+          setCellValue(
+            rawSheet,
+            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
+            value,
+            XLSX.utils.encode_cell({ r: rawDataStyleRow - 1, c: col })
+          )
+        })
+      })
+      rawSheet['!ref'] = `A1:J${Math.max(dailyRows.length + 1, 1)}`
 
       XLSX.writeFile(
         workbook,
         getSafeFileName(`발주서_${model.model}_초안_${getToday()}.xlsm`),
-        { bookType: 'xlsm', bookVBA: true }
+        { bookType: 'xlsm', bookVBA: true, cellStyles: true }
       )
     } catch (error: any) {
       console.error(error)
