@@ -1,5 +1,5 @@
 import { OpsDataFreshness } from '@/components/ops-data-freshness'
-import { RocketReorderManager } from '@/components/rocket-reorder-manager'
+import { RocketReorderManagerV2 } from '@/components/rocket-reorder-manager-v2'
 
 export default function RocketReorderPage() {
   return (
@@ -15,7 +15,7 @@ export default function RocketReorderPage() {
         <OpsDataFreshness sources={['sales', 'stock']} />
       </section>
 
-      <RocketReorderManager />
+      <RocketReorderManagerV2 />
     </div>
   )
 }
