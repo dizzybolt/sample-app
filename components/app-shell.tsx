@@ -13,24 +13,20 @@ import {
   FileText,
   Home,
   IdCard,
-  ImageIcon,
-  Layers3,
+  Images,
+  LayoutList,
   Menu,
   Package,
   PackageCheck,
   Palette,
   Ruler,
   Settings,
-  Shirt,
   Truck,
   Warehouse,
-  Wrench,
   X,
   Combine,
   Boxes,
   Grid2x2Plus,
-  Images,
-  LayoutList,
   TrendingUp,
   Gift,
   RotateCcw,
@@ -38,7 +34,6 @@ import {
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { tr } from 'date-fns/locale'
 
 const menuSections = [
   {
@@ -78,6 +73,7 @@ const menuSections = [
     title: '판매관리',
     items: [
       { title: '주문통계', href: '/sales-stats', icon: TrendingUp },
+      { title: '쿠팡로켓 발주추천', href: '/rocket-reorder', icon: Truck },
       { title: '로켓SKU관리', href: '/rocket-skus', icon: Truck },
       { title: '클레임 통계', href: '/claims', icon: RotateCcw },
       { title: '사은품 출고내역', href: '/gift-shipments', icon: Gift },
