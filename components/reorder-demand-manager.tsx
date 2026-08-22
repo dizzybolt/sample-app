@@ -46,6 +46,7 @@ const MODEL_PAGE_SIZE = 30
 
 const MACRO_TEMPLATE_PATH = '/excel/order-sheet-template.xlsm'
 const DEMAND_TEMPLATE_PATH = '/excel/reorder-demand-template.xlsm'
+const DEMAND_FORMAT_TEMPLATE_PATH = '/excel/reorder-demand-format-template.xlsx'
 
 
 type DemandSourceState = {
@@ -661,31 +662,67 @@ export function ReorderDemandManager() {
       return
     }
 
+    const cloneStyle = (value: any) => {
+      if (!value) return undefined
+      return JSON.parse(JSON.stringify(value))
+    }
+
+    const copyCellStyle = (
+      sheet: XLSX.WorkSheet,
+      sourceAddress: string,
+      targetAddress: string
+    ) => {
+      const source = sheet[sourceAddress] as any
+      const target = (sheet[targetAddress] || { t: 's', v: '' }) as any
+      if (source?.s !== undefined) target.s = cloneStyle(source.s)
+      if (source?.z !== undefined) target.z = source.z
+      sheet[targetAddress] = target
+    }
+
     const setCellValue = (
       sheet: XLSX.WorkSheet,
       address: string,
       value: string | number | null | undefined,
       styleFrom?: string
     ) => {
-      const current = sheet[address] as any
-      const source = (styleFrom ? sheet[styleFrom] : current) as any
+      const source = (styleFrom ? sheet[styleFrom] : sheet[address]) as any
       const cell: any = {
         t: typeof value === 'number' ? 'n' : 's',
         v: value ?? '',
       }
-
-      if (source?.s !== undefined) cell.s = source.s
+      if (source?.s !== undefined) cell.s = cloneStyle(source.s)
       if (source?.z !== undefined) cell.z = source.z
-
       sheet[address] = cell
     }
 
-    const clearSheetValues = (sheet: XLSX.WorkSheet) => {
-      if (!sheet['!ref']) return
-      const range = XLSX.utils.decode_range(sheet['!ref'])
-      for (let row = range.s.r; row <= range.e.r; row += 1) {
-        for (let col = range.s.c; col <= range.e.c; col += 1) {
-          const address = XLSX.utils.encode_cell({ r: row, c: col })
+    const setCellFormula = (
+      sheet: XLSX.WorkSheet,
+      address: string,
+      formula: string,
+      styleFrom?: string,
+      cachedValue: number = 0
+    ) => {
+      const source = (styleFrom ? sheet[styleFrom] : sheet[address]) as any
+      const cell: any = {
+        t: 'n',
+        f: formula,
+        v: cachedValue,
+      }
+      if (source?.s !== undefined) cell.s = cloneStyle(source.s)
+      if (source?.z !== undefined) cell.z = source.z
+      sheet[address] = cell
+    }
+
+    const clearRangeValues = (
+      sheet: XLSX.WorkSheet,
+      startRow: number,
+      endRow: number,
+      startCol: number,
+      endCol: number
+    ) => {
+      for (let row = startRow; row <= endRow; row += 1) {
+        for (let col = startCol; col <= endCol; col += 1) {
+          const address = XLSX.utils.encode_cell({ r: row - 1, c: col })
           const cell = sheet[address] as any
           if (!cell) continue
           delete cell.f
@@ -705,24 +742,34 @@ export function ReorderDemandManager() {
       endCol: number
     ) => {
       for (let col = startCol; col <= endCol; col += 1) {
-        const sourceAddress = XLSX.utils.encode_cell({ r: sourceRow - 1, c: col })
-        const targetAddress = XLSX.utils.encode_cell({ r: targetRow - 1, c: col })
-        const sourceCell = sheet[sourceAddress] as any
-        const targetCell = (sheet[targetAddress] || { t: 's', v: '' }) as any
-        if (sourceCell?.s !== undefined) targetCell.s = sourceCell.s
-        if (sourceCell?.z !== undefined) targetCell.z = sourceCell.z
-        sheet[targetAddress] = targetCell
+        const sourceAddress = XLSX.utils.encode_cell({
+          r: sourceRow - 1,
+          c: col,
+        })
+        const targetAddress = XLSX.utils.encode_cell({
+          r: targetRow - 1,
+          c: col,
+        })
+        copyCellStyle(sheet, sourceAddress, targetAddress)
       }
+    }
+
+    const groupDatesByMonth = (dates: string[]) => {
+      const groups: { month: string; dates: string[] }[] = []
+      dates.forEach((date) => {
+        const month = date.slice(0, 7)
+        const last = groups[groups.length - 1]
+        if (last?.month === month) {
+          last.dates.push(date)
+        } else {
+          groups.push({ month, dates: [date] })
+        }
+      })
+      return groups
     }
 
     setExporting(true)
     try {
-      const targets = model.skuRows.map((row) => ({
-        modelName: model.model,
-        colorCode: row.colorCode,
-        sku: row.sku,
-      }))
-      const imageMap = await fetchProductImageMap(supabase, targets)
       const dailyRows = buildDemandDailyExportRows(
         sourceState.salesRows,
         sourceState.claimRows,
@@ -732,466 +779,639 @@ export function ReorderDemandManager() {
         periodEnd
       )
       const dates = listDatesInclusive(periodStart, periodEnd)
-      const sortedSkuRows = [...model.skuRows].sort((a, b) =>
-        compareExportText(a.model, b.model) ||
-        compareExportText(a.colorCode, b.colorCode) ||
-        compareExportText(a.size, b.size) ||
-        compareExportText(a.sku, b.sku)
+      const monthGroups = groupDatesByMonth(dates)
+
+      const sortedSkuRows = [...model.skuRows].sort(
+        (a, b) =>
+          compareExportText(a.model, b.model) ||
+          compareExportText(a.colorCode, b.colorCode) ||
+          compareExportText(a.size, b.size) ||
+          compareExportText(a.sku, b.sku)
       )
 
       const dailyBySkuDate = new Map<string, number>()
       dailyRows.forEach((row) => {
         const key = `${row.convertedSku}\u0001${row.date}`
-        dailyBySkuDate.set(key, (dailyBySkuDate.get(key) || 0) + row.netSalesQty)
+        dailyBySkuDate.set(
+          key,
+          (dailyBySkuDate.get(key) || 0) + Number(row.netSalesQty || 0)
+        )
       })
 
-      const response = await fetch(DEMAND_TEMPLATE_PATH)
-      if (!response.ok) {
-        throw new Error('시즌수요 발주 템플릿을 불러오지 못했습니다.')
+      // The existing XLSM is used only as the VBA source.
+      // The uploaded example workbook is used as the visible layout/formula source.
+      const [macroResponse, formatResponse] = await Promise.all([
+        fetch(DEMAND_TEMPLATE_PATH),
+        fetch(DEMAND_FORMAT_TEMPLATE_PATH),
+      ])
+
+      if (!macroResponse.ok) {
+        throw new Error('시즌수요 매크로 템플릿을 불러오지 못했습니다.')
       }
-      const buffer = await response.arrayBuffer()
-      const workbook = XLSX.read(buffer, {
+      if (!formatResponse.ok) {
+        throw new Error('시즌수요 발주 양식 템플릿을 불러오지 못했습니다.')
+      }
+
+      const [macroBuffer, formatBuffer] = await Promise.all([
+        macroResponse.arrayBuffer(),
+        formatResponse.arrayBuffer(),
+      ])
+
+      const macroWorkbook = XLSX.read(macroBuffer, {
         type: 'array',
         bookVBA: true,
         cellStyles: true,
       })
+      const workbook = XLSX.read(formatBuffer, {
+        type: 'array',
+        cellStyles: true,
+      }) as XLSX.WorkBook & { vbaraw?: any }
 
-      // IMPORTANT: preserve the workbook VBA CodeName from the template.
-      // Workbook_Open is bound to that existing CodeName inside vbaProject.bin.
-      // Changing WBProps.CodeName (for example to `ThisWorkbook`) can stop
-      // Workbook_Open from firing even though the VBA project itself is kept.
-      //
-      // Only worksheet CodeNames need sanitizing.  Visible Korean sheet names
-      // such as `2_일자별판매` may start with a number and are not valid VBA
-      // identifiers, which makes Excel repair sheetPr records on open.
-      const workbookMeta = (workbook as any).Workbook
-      if (workbookMeta) {
-        workbookMeta.Sheets = workbookMeta.Sheets || []
+      // Reuse the already-tested VBA project from reorder-demand-template.xlsm.
+      const macroRaw = (macroWorkbook as any).vbaraw
+      if (!macroRaw) {
+        throw new Error(
+          '기존 시즌수요 XLSM 템플릿에서 VBA 프로젝트를 찾지 못했습니다.'
+        )
+      }
+      ;(workbook as any).vbaraw = macroRaw
 
-        workbook.SheetNames.forEach((_sheetName, index) => {
-          workbookMeta.Sheets[index] = workbookMeta.Sheets[index] || {}
-          workbookMeta.Sheets[index].CodeName = `Sheet${index + 1}`
-        })
+      // Keep the workbook VBA CodeName paired with vbaProject.bin.
+      const macroMeta = (macroWorkbook as any).Workbook
+      const workbookMeta = ((workbook as any).Workbook ||= {})
+      workbookMeta.WBProps ||= {}
+      if (macroMeta?.WBProps?.CodeName) {
+        workbookMeta.WBProps.CodeName = macroMeta.WBProps.CodeName
       }
 
-      const calculationSheetName = workbook.SheetNames[0]
-      const calculationSheet = workbook.Sheets[calculationSheetName]
-      const dailySheet = workbook.Sheets['2_일자별판매']
-      const rawSheet = workbook.Sheets['3_원본상세']
+      workbookMeta.Sheets ||= []
+      workbook.SheetNames.forEach((_name, index) => {
+        workbookMeta.Sheets[index] ||= {}
+        workbookMeta.Sheets[index].CodeName = `Sheet${index + 1}`
+      })
+      workbookMeta.CalcPr = {
+        ...(workbookMeta.CalcPr || {}),
+        calcMode: 'auto',
+        fullCalcOnLoad: '1',
+        forceFullCalc: '1',
+      }
 
-      if (!calculationSheet || !dailySheet || !rawSheet) {
+      const orderSheet = workbook.Sheets['1_발주서']
+      const dailySheet = workbook.Sheets['2_일자별판매']
+      if (!orderSheet || !dailySheet) {
         throw new Error(
-          '시즌수요 템플릿에 Sheet1 / 2_일자별판매 / 3_원본상세 시트가 필요합니다.'
+          '양식 템플릿에는 1_발주서 / 2_일자별판매 시트가 필요합니다.'
         )
       }
 
-      const targetDemandTotal = sortedSkuRows.reduce(
-        (sum, row) => sum + Number(row.targetDemandQty || 0),
-        0
-      )
-      const recommendedTotal = sortedSkuRows.reduce(
-        (sum, row) => sum + Number(row.recommendedQty || 0),
-        0
-      )
-      const currentStockTotal = sortedSkuRows.reduce(
-        (sum, row) => sum + Number(row.currentStockQty || 0),
-        0
-      )
-      const quantityCheckTotal = sortedSkuRows.reduce(
-        (sum, row) =>
-          sum + Math.max(row.targetDemandQty - row.currentStockQty, 0),
-        0
-      )
-      const periodNetSalesTotal = sortedSkuRows.reduce(
-        (sum, row) => sum + Number(row.periodNetSalesQty || 0),
-        0
-      )
-      const periodDays = dates.length
-      const dailyAverage = periodDays > 0 ? model.demandSalesQty / periodDays : 0
+      // ============================================================
+      // 2_일자별판매
+      // Example structure:
+      // A-C fixed SKU columns
+      // [month total][daily columns] repeated by month
+      // final columns: 계 / 누계 / 판매율 / 재고
+      // ============================================================
+      const dailyDataStartRow = 6
+      const dailyDataEndRow = dailyDataStartRow + sortedSkuRows.length - 1
+      const dailyTotalRow = Math.max(dailyDataEndRow + 1, dailyDataStartRow + 1)
 
-      // ------------------------------------------------------------
-      // 1) Calculation sheet: keep the template layout / VBA intact.
-      // ------------------------------------------------------------
-      const calcTemplateRef = calculationSheet['!ref'] || 'A1:O26'
-      const calcTemplateRange = XLSX.utils.decode_range(calcTemplateRef)
-      const calcTemplateTotalRow = calcTemplateRange.e.r + 1
-      const calcDataStyleRow = Math.min(8, calcTemplateTotalRow - 1)
+      const templateDailyDataRow = 6
+      const templateDailyTotalRow = 13
+      const templateMonthTotalCol = 3 // D, zero-based
+      const templateDateCol = 4 // E
+      const templateSummaryCol = 161 // FF in the example template
 
-      clearSheetValues(calculationSheet)
-
-      setCellValue(calculationSheet, 'C1', '발주서 (초안)')
-      setCellValue(calculationSheet, 'H1', '판매수량')
-      setCellValue(calculationSheet, 'J1', model.demandSalesQty)
-      setCellValue(calculationSheet, 'L1', '목표수요 합계')
-      setCellValue(calculationSheet, 'O1', targetDemandTotal)
+      clearRangeValues(dailySheet, 1, Math.max(dailyTotalRow, 20), 0, 600)
 
       setCellValue(
-        calculationSheet,
-        'C2',
-        `[품번 : ${model.model}] [산정방식 : ${getMethodLabel(
-          model.calculationMethod
-        )}] [적용기간 : ${periodStart} ~ ${periodEnd} (${periodDays}일)]`
+        dailySheet,
+        'A1',
+        '일자별 판매분석 (참고자료 원본)',
+        'A1'
       )
-      setCellValue(calculationSheet, 'H2', '판매일수')
-      setCellValue(calculationSheet, 'J2', periodDays)
-      setCellValue(calculationSheet, 'L2', '추천발주 합계')
-      setCellValue(calculationSheet, 'O2', recommendedTotal)
-      setCellValue(calculationSheet, 'H3', '일판매')
-      setCellValue(calculationSheet, 'J3', Number(dailyAverage.toFixed(2)))
-      setCellValue(calculationSheet, 'H4', '예상 판매일수')
-      setCellValue(calculationSheet, 'J4', periodDays)
-      setCellValue(calculationSheet, 'H5', '예상 판매수량')
-      setCellValue(calculationSheet, 'J5', targetDemandTotal)
+      setCellValue(
+        dailySheet,
+        'A2',
+        `[기준일자 : ${periodStart} ~ ${periodEnd}] [품번 : ${model.model} ~ ${model.model}]`,
+        'A2'
+      )
 
-      const calcHeaders = [
-        '이미지URL',
-        '썸네일',
+      ;['A4', 'B4', 'C4'].forEach((address, index) => {
+        setCellValue(
+          dailySheet,
+          address,
+          ['품번', '칼라', 'SIZE'][index],
+          address
+        )
+      })
+
+      let currentCol = 3
+      const monthLayouts: {
+        month: string
+        totalCol: number
+        firstDateCol: number
+        lastDateCol: number
+      }[] = []
+
+      monthGroups.forEach((group) => {
+        const totalCol = currentCol
+        const firstDateCol = totalCol + 1
+        const lastDateCol = firstDateCol + group.dates.length - 1
+        const [year, month] = group.month.split('-')
+
+        monthLayouts.push({
+          month: group.month,
+          totalCol,
+          firstDateCol,
+          lastDateCol,
+        })
+
+        const totalColLetter = XLSX.utils.encode_col(totalCol)
+        setCellValue(
+          dailySheet,
+          `${totalColLetter}3`,
+          `${year.slice(2)}년`,
+          'D3'
+        )
+        setCellValue(
+          dailySheet,
+          `${totalColLetter}4`,
+          `${Number(month)}월`,
+          'D4'
+        )
+        setCellFormula(
+          dailySheet,
+          `${totalColLetter}5`,
+          `COUNTA(${XLSX.utils.encode_col(firstDateCol)}${dailyTotalRow}:${XLSX.utils.encode_col(lastDateCol)}${dailyTotalRow})`,
+          'D5',
+          group.dates.length
+        )
+
+        group.dates.forEach((date, index) => {
+          const col = firstDateCol + index
+          const colLetter = XLSX.utils.encode_col(col)
+          setCellValue(
+            dailySheet,
+            `${colLetter}4`,
+            Number(date.slice(8, 10)),
+            'E4'
+          )
+          setCellValue(
+            dailySheet,
+            `${colLetter}5`,
+            getKoreanWeekday(date),
+            'E5'
+          )
+        })
+
+        currentCol = lastDateCol + 1
+      })
+
+      const summaryStartCol = currentCol
+      const summaryHeaders = ['계', '누계', '판매율', '재고']
+      summaryHeaders.forEach((header, index) => {
+        const col = summaryStartCol + index
+        setCellValue(
+          dailySheet,
+          `${XLSX.utils.encode_col(col)}4`,
+          header,
+          XLSX.utils.encode_cell({
+            r: 3,
+            c: templateSummaryCol + index,
+          })
+        )
+      })
+
+      sortedSkuRows.forEach((row, index) => {
+        const excelRow = dailyDataStartRow + index
+
+        copyRowStyles(dailySheet, templateDailyDataRow, excelRow, 0, 2)
+
+        setCellValue(dailySheet, `A${excelRow}`, model.model, 'A6')
+        setCellValue(dailySheet, `B${excelRow}`, row.colorCode, 'B6')
+        setCellValue(dailySheet, `C${excelRow}`, row.size, 'C6')
+
+        monthLayouts.forEach((layout) => {
+          const totalLetter = XLSX.utils.encode_col(layout.totalCol)
+          const firstDateLetter = XLSX.utils.encode_col(layout.firstDateCol)
+          const lastDateLetter = XLSX.utils.encode_col(layout.lastDateCol)
+
+          copyCellStyle(dailySheet, 'D6', `${totalLetter}${excelRow}`)
+          setCellFormula(
+            dailySheet,
+            `${totalLetter}${excelRow}`,
+            `SUM(${firstDateLetter}${excelRow}:${lastDateLetter}${excelRow})`,
+            'D6'
+          )
+
+          for (
+            let col = layout.firstDateCol;
+            col <= layout.lastDateCol;
+            col += 1
+          ) {
+            const dateIndex =
+              monthLayouts
+                .filter((item) => item.totalCol < layout.totalCol)
+                .reduce(
+                  (sum, item) => sum + (item.lastDateCol - item.firstDateCol + 1),
+                  0
+                ) +
+              (col - layout.firstDateCol)
+            const date = dates[dateIndex]
+            const qty = dailyBySkuDate.get(`${row.sku}\u0001${date}`) || 0
+            const address = `${XLSX.utils.encode_col(col)}${excelRow}`
+            copyCellStyle(dailySheet, 'E6', address)
+            setCellValue(
+              dailySheet,
+              address,
+              qty === 0 ? '' : qty,
+              'E6'
+            )
+          }
+        })
+
+        const totalSalesCol = summaryStartCol
+        const cumulativeCol = summaryStartCol + 1
+        const shareCol = summaryStartCol + 2
+        const stockCol = summaryStartCol + 3
+
+        const monthTotalRefs = monthLayouts.map(
+          (layout) => `${XLSX.utils.encode_col(layout.totalCol)}${excelRow}`
+        )
+
+        setCellFormula(
+          dailySheet,
+          `${XLSX.utils.encode_col(totalSalesCol)}${excelRow}`,
+          monthTotalRefs.length ? `SUM(${monthTotalRefs.join(',')})` : '0',
+          'FF6',
+          row.periodNetSalesQty
+        )
+        setCellValue(
+          dailySheet,
+          `${XLSX.utils.encode_col(cumulativeCol)}${excelRow}`,
+          row.periodNetSalesQty,
+          'FG6'
+        )
+        setCellValue(
+          dailySheet,
+          `${XLSX.utils.encode_col(shareCol)}${excelRow}`,
+          model.demandSalesQty > 0
+            ? row.periodNetSalesQty / model.demandSalesQty
+            : 0,
+          'FH6'
+        )
+        setCellValue(
+          dailySheet,
+          `${XLSX.utils.encode_col(stockCol)}${excelRow}`,
+          row.currentStockQty,
+          'FI6'
+        )
+      })
+
+      // Total row
+      copyRowStyles(
+        dailySheet,
+        templateDailyTotalRow,
+        dailyTotalRow,
+        0,
+        summaryStartCol + 3
+      )
+      setCellValue(dailySheet, `A${dailyTotalRow}`, '총    계', 'A13')
+
+      monthLayouts.forEach((layout) => {
+        const totalLetter = XLSX.utils.encode_col(layout.totalCol)
+        setCellFormula(
+          dailySheet,
+          `${totalLetter}${dailyTotalRow}`,
+          `SUM(${totalLetter}${dailyDataStartRow}:${totalLetter}${dailyDataEndRow})`,
+          'D13'
+        )
+
+        for (
+          let col = layout.firstDateCol;
+          col <= layout.lastDateCol;
+          col += 1
+        ) {
+          const letter = XLSX.utils.encode_col(col)
+          setCellFormula(
+            dailySheet,
+            `${letter}${dailyTotalRow}`,
+            `SUM(${letter}${dailyDataStartRow}:${letter}${dailyDataEndRow})`,
+            'E13'
+          )
+        }
+      })
+
+      const totalSalesLetter = XLSX.utils.encode_col(summaryStartCol)
+      const cumulativeLetter = XLSX.utils.encode_col(summaryStartCol + 1)
+      const shareLetter = XLSX.utils.encode_col(summaryStartCol + 2)
+      const stockLetter = XLSX.utils.encode_col(summaryStartCol + 3)
+
+      setCellFormula(
+        dailySheet,
+        `${totalSalesLetter}${dailyTotalRow}`,
+        `SUM(${totalSalesLetter}${dailyDataStartRow}:${totalSalesLetter}${dailyDataEndRow})`,
+        'FF13',
+        model.demandSalesQty
+      )
+      setCellFormula(
+        dailySheet,
+        `${cumulativeLetter}${dailyTotalRow}`,
+        `SUM(${cumulativeLetter}${dailyDataStartRow}:${cumulativeLetter}${dailyDataEndRow})`,
+        'FG13',
+        model.demandSalesQty
+      )
+      setCellFormula(
+        dailySheet,
+        `${shareLetter}${dailyTotalRow}`,
+        `SUM(${shareLetter}${dailyDataStartRow}:${shareLetter}${dailyDataEndRow})`,
+        'FH13',
+        1
+      )
+      setCellFormula(
+        dailySheet,
+        `${stockLetter}${dailyTotalRow}`,
+        `SUM(${stockLetter}${dailyDataStartRow}:${stockLetter}${dailyDataEndRow})`,
+        'FI13',
+        model.currentStockQty
+      )
+
+      // Column widths from example template
+      const fixedDailyWidths = [{ wch: 18.75 }, { wch: 5.5 }, { wch: 5.5 }]
+      const monthTotalWidth = { wch: 6.5 }
+      const dayWidth = { wch: 4.2 }
+      const summaryWidths = [
+        { wch: 8.5 },
+        { wch: 8.5 },
+        { wch: 9.5 },
+        { wch: 8.5 },
+      ]
+      dailySheet['!cols'] = [
+        ...fixedDailyWidths,
+        ...monthLayouts.flatMap((layout) => [
+          { ...monthTotalWidth },
+          ...Array(layout.lastDateCol - layout.firstDateCol + 1)
+            .fill(null)
+            .map(() => ({ ...dayWidth })),
+        ]),
+        ...summaryWidths,
+      ]
+      dailySheet['!ref'] = `A1:${stockLetter}${dailyTotalRow}`
+
+      // ============================================================
+      // 1_발주서
+      // Preserve the example formulas exactly where the source has formulas.
+      // F4 is intentionally a user-editable input (default 120 days).
+      // ============================================================
+      const orderDataStartRow = 8
+      const orderDataEndRow = orderDataStartRow + sortedSkuRows.length - 1
+      const orderTotalRow = Math.max(orderDataEndRow + 1, orderDataStartRow + 1)
+      const templateOrderDataRow = 8
+      const templateOrderTotalRow = 15
+
+      clearRangeValues(orderSheet, 1, Math.max(orderTotalRow, 20), 0, 12)
+
+      setCellValue(orderSheet, 'A1', '발주서 (초안)', 'A1')
+      setCellValue(orderSheet, 'A2', `[품번 : ${model.model}]`, 'A2')
+      setCellValue(
+        orderSheet,
+        'A3',
+        `[산정방식 : ${getMethodLabel(model.calculationMethod)}]`,
+        'A3'
+      )
+      setCellValue(
+        orderSheet,
+        'A4',
+        `[적용기간 : ${periodStart} ~ ${periodEnd} (${dates.length}일)]`,
+        'A4'
+      )
+
+      setCellValue(orderSheet, 'E1', '판매수량', 'E1')
+      setCellFormula(
+        orderSheet,
+        'F1',
+        `'2_일자별판매'!${cumulativeLetter}${dailyTotalRow}`,
+        'F1',
+        model.demandSalesQty
+      )
+      setCellValue(orderSheet, 'E2', '판매일수', 'E2')
+      setCellValue(orderSheet, 'F2', dates.length, 'F2')
+      setCellValue(orderSheet, 'E3', '일판매', 'E3')
+      setCellFormula(
+        orderSheet,
+        'F3',
+        'IFERROR(F1/F2,0)',
+        'F3',
+        dates.length > 0 ? model.demandSalesQty / dates.length : 0
+      )
+      setCellValue(orderSheet, 'E4', '예상 판매일수', 'E4')
+      setCellValue(orderSheet, 'F4', 120, 'F4')
+      setCellValue(orderSheet, 'E5', '예상 판매수량', 'E5')
+      setCellFormula(
+        orderSheet,
+        'F5',
+        'F4*F3',
+        'F5',
+        dates.length > 0 ? (model.demandSalesQty / dates.length) * 120 : 0
+      )
+
+      setCellValue(orderSheet, 'H1', '목표수요', 'H1')
+      // Keep the source example formula linkage as-is.
+      setCellFormula(orderSheet, 'I1', `H${orderTotalRow}`, 'I1')
+      setCellValue(orderSheet, 'H2', '발주수량', 'H2')
+      setCellFormula(orderSheet, 'I2', `I${orderTotalRow}`, 'I2')
+
+      const orderHeaders = [
         '품번',
-        '품번명',
         '칼라',
         'SIZE',
         '기간판매수량\n(순판매)',
         '비율(전체)',
-        '판매비중\n(전사기준,참고)',
         '현재고',
         '목표수요\n(예상수요)',
         '수량체크\n(목표수요-현재고)',
         '발주수량',
         '모델판단',
         '긴급도',
+        '발주비율',
+        '비율차이',
       ]
-      calcHeaders.forEach((header, col) => {
+      orderHeaders.forEach((header, index) => {
         setCellValue(
-          calculationSheet,
-          XLSX.utils.encode_cell({ r: 6, c: col }),
-          header
-        )
-      })
-
-      sortedSkuRows.forEach((row, index) => {
-        const excelRow = 8 + index
-        copyRowStyles(calculationSheet, calcDataStyleRow, excelRow, 0, 14)
-        const quantityCheck = Math.max(
-          row.targetDemandQty - row.currentStockQty,
-          0
-        )
-        const values: (string | number)[] = [
-          resolveProductImage(imageMap, {
-            modelName: model.model,
-            colorCode: row.colorCode,
-            sku: row.sku,
-          }) || '',
-          '',
-          model.model,
-          '',
-          row.colorCode,
-          row.size,
-          row.periodNetSalesQty,
-          model.demandSalesQty > 0
-            ? row.periodNetSalesQty / model.demandSalesQty
-            : 0,
-          '',
-          row.currentStockQty,
-          row.targetDemandQty,
-          quantityCheck,
-          row.recommendedQty,
-          model.decision,
-          model.urgency,
-        ]
-        values.forEach((value, col) => {
-          setCellValue(
-            calculationSheet,
-            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
-            value,
-            XLSX.utils.encode_cell({ r: calcDataStyleRow - 1, c: col })
-          )
-        })
-      })
-
-      const calcTotalRow = 8 + sortedSkuRows.length
-      copyRowStyles(
-        calculationSheet,
-        calcTemplateTotalRow,
-        calcTotalRow,
-        0,
-        14
-      )
-      const totalValues: (string | number)[] = [
-        '', '', '총    계', '', '', '',
-        periodNetSalesTotal, '', '', currentStockTotal,
-        targetDemandTotal, quantityCheckTotal, recommendedTotal, '', '',
-      ]
-      totalValues.forEach((value, col) => {
-        setCellValue(
-          calculationSheet,
-          XLSX.utils.encode_cell({ r: calcTotalRow - 1, c: col }),
-          value,
-          XLSX.utils.encode_cell({ r: calcTemplateTotalRow - 1, c: col })
-        )
-      })
-
-      calculationSheet['!ref'] = `A1:O${calcTotalRow}`
-      calculationSheet['!autofilter'] = {
-        ref: `A7:O${Math.max(calcTotalRow - 1, 7)}`,
-      }
-
-      // ------------------------------------------------------------
-      // 2) Daily sales sheet: date columns grow/shrink dynamically.
-      //    Width/style of one date column in the template is reused.
-      // ------------------------------------------------------------
-      const dailyTemplateRange = XLSX.utils.decode_range(
-        dailySheet['!ref'] || 'A1:H6'
-      )
-      const dailyTemplateCols = [...(dailySheet['!cols'] || [])]
-      const templateSummaryStartCol = Math.max(
-        4,
-        dailyTemplateRange.e.c - 3
-      )
-      const dailyDataStyleRow = Math.min(6, dailyTemplateRange.e.r)
-      const dailyTotalStyleRow = dailyTemplateRange.e.r + 1
-
-      clearSheetValues(dailySheet)
-
-      const dailySummaryStartCol = 4 + dates.length
-      const dailyLastCol = dailySummaryStartCol + 3
-      const dailyTotalRow = 6 + sortedSkuRows.length
-
-      setCellValue(dailySheet, 'A1', '일자별 판매분석 (참고자료 원본)')
-      setCellValue(
-        dailySheet,
-        'A2',
-        `[기준일자 : ${periodStart} ~ ${periodEnd}] [품번 : ${model.model} ~ ${model.model}]`
-      )
-
-      const fixedHeaders = ['품번', '품번명', '칼라', 'SIZE']
-      fixedHeaders.forEach((header, col) => {
-        setCellValue(
-          dailySheet,
-          XLSX.utils.encode_cell({ r: 3, c: col }),
-          header
-        )
-      })
-
-      dates.forEach((date, index) => {
-        const col = 4 + index
-        const dayAddress = XLSX.utils.encode_cell({ r: 3, c: col })
-        const weekdayAddress = XLSX.utils.encode_cell({ r: 4, c: col })
-        setCellValue(dailySheet, dayAddress, Number(date.slice(8, 10)), 'E4')
-        setCellValue(dailySheet, weekdayAddress, getKoreanWeekday(date), 'E5')
-      })
-
-      const summaryHeaders = ['계', '누계', '판매율', '재고']
-      summaryHeaders.forEach((header, index) => {
-        const targetCol = dailySummaryStartCol + index
-        const sourceCol = templateSummaryStartCol + index
-        setCellValue(
-          dailySheet,
-          XLSX.utils.encode_cell({ r: 3, c: targetCol }),
+          orderSheet,
+          XLSX.utils.encode_cell({ r: 6, c: index }),
           header,
-          XLSX.utils.encode_cell({ r: 3, c: sourceCol })
-        )
-        setCellValue(
-          dailySheet,
-          XLSX.utils.encode_cell({ r: 4, c: targetCol }),
-          '',
-          XLSX.utils.encode_cell({ r: 4, c: sourceCol })
+          XLSX.utils.encode_cell({ r: 6, c: index })
         )
       })
 
       sortedSkuRows.forEach((row, index) => {
-        const excelRow = 6 + index
-        copyRowStyles(dailySheet, dailyDataStyleRow, excelRow, 0, 3)
-
-        const dailyValues = dates.map(
-          (date) => dailyBySkuDate.get(`${row.sku}\u0001${date}`) || 0
-        )
-        const total = dailyValues.reduce(
-          (sum, qty) => sum + Number(qty || 0),
-          0
+        const excelRow = orderDataStartRow + index
+        copyRowStyles(
+          orderSheet,
+          templateOrderDataRow,
+          excelRow,
+          0,
+          12
         )
 
-        const fixedValues: (string | number)[] = [
-          model.model,
-          '',
-          row.colorCode,
-          row.size,
-        ]
-        fixedValues.forEach((value, col) => {
-          setCellValue(
-            dailySheet,
-            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
-            value,
-            XLSX.utils.encode_cell({ r: dailyDataStyleRow - 1, c: col })
-          )
-        })
-
-        dailyValues.forEach((qty, dateIndex) => {
-          const col = 4 + dateIndex
-          setCellValue(
-            dailySheet,
-            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
-            qty === 0 ? '' : qty,
-            'E6'
-          )
-        })
-
-        const summaryValues: (string | number)[] = [
-          total,
+        setCellValue(orderSheet, `A${excelRow}`, model.model, 'A8')
+        setCellValue(orderSheet, `B${excelRow}`, row.colorCode, 'B8')
+        setCellValue(orderSheet, `C${excelRow}`, row.size, 'C8')
+        setCellValue(
+          orderSheet,
+          `D${excelRow}`,
           row.periodNetSalesQty,
+          'D8'
+        )
+        setCellValue(
+          orderSheet,
+          `E${excelRow}`,
           model.demandSalesQty > 0
             ? row.periodNetSalesQty / model.demandSalesQty
             : 0,
-          row.currentStockQty,
-        ]
-        summaryValues.forEach((value, summaryIndex) => {
-          const targetCol = dailySummaryStartCol + summaryIndex
-          const sourceCol = templateSummaryStartCol + summaryIndex
-          setCellValue(
-            dailySheet,
-            XLSX.utils.encode_cell({ r: excelRow - 1, c: targetCol }),
-            value,
-            XLSX.utils.encode_cell({
-              r: dailyDataStyleRow - 1,
-              c: sourceCol,
-            })
-          )
-        })
-      })
-
-      const dailyTotals = dates.map((date) =>
-        sortedSkuRows.reduce(
-          (sum, row) =>
-            sum + (dailyBySkuDate.get(`${row.sku}\u0001${date}`) || 0),
-          0
+          'E8'
         )
-      )
+        setCellValue(
+          orderSheet,
+          `F${excelRow}`,
+          row.currentStockQty,
+          'F8'
+        )
+        setCellFormula(
+          orderSheet,
+          `G${excelRow}`,
+          `INT(F$5*E${excelRow})`,
+          'G8'
+        )
+        setCellFormula(
+          orderSheet,
+          `H${excelRow}`,
+          `G${excelRow}-F${excelRow}`,
+          'H8'
+        )
+        setCellValue(
+          orderSheet,
+          `I${excelRow}`,
+          row.recommendedQty,
+          'I8'
+        )
+        setCellValue(
+          orderSheet,
+          `J${excelRow}`,
+          model.decision,
+          'J8'
+        )
+        setCellValue(
+          orderSheet,
+          `K${excelRow}`,
+          model.urgency,
+          'K8'
+        )
+        setCellFormula(
+          orderSheet,
+          `L${excelRow}`,
+          `IFERROR(I${excelRow}/I$${orderTotalRow},0)`,
+          'L8'
+        )
+        setCellFormula(
+          orderSheet,
+          `M${excelRow}`,
+          `L${excelRow}-E${excelRow}`,
+          'M8'
+        )
+      })
 
       copyRowStyles(
-        dailySheet,
-        dailyTotalStyleRow,
-        dailyTotalRow,
+        orderSheet,
+        templateOrderTotalRow,
+        orderTotalRow,
         0,
-        dailyLastCol
+        12
       )
-      setCellValue(dailySheet, `A${dailyTotalRow}`, '총    계')
-      dailyTotals.forEach((qty, index) => {
-        setCellValue(
-          dailySheet,
-          XLSX.utils.encode_cell({
-            r: dailyTotalRow - 1,
-            c: 4 + index,
-          }),
-          qty,
-          `E${dailyTotalStyleRow}`
-        )
-      })
-      const dailyTotalSummary = [
-        dailyTotals.reduce((sum, qty) => sum + qty, 0),
-        model.demandSalesQty,
-        '',
-        model.currentStockQty,
-      ]
-      dailyTotalSummary.forEach((value, index) => {
-        setCellValue(
-          dailySheet,
-          XLSX.utils.encode_cell({
-            r: dailyTotalRow - 1,
-            c: dailySummaryStartCol + index,
-          }),
-          value,
-          XLSX.utils.encode_cell({
-            r: dailyTotalStyleRow - 1,
-            c: templateSummaryStartCol + index,
-          })
-        )
-      })
-
-      const fixedWidths = [
-        dailyTemplateCols[0] || { wch: 18 },
-        dailyTemplateCols[1] || { wch: 30 },
-        dailyTemplateCols[2] || { wch: 9 },
-        dailyTemplateCols[3] || { wch: 9 },
-      ]
-      const dateWidth = dailyTemplateCols[4] || { wch: 5 }
-      const summaryWidths = Array.from({ length: 4 }, (_, index) =>
-        dailyTemplateCols[templateSummaryStartCol + index] || { wch: 10 }
+      setCellValue(orderSheet, `A${orderTotalRow}`, '총    계', 'A15')
+      setCellFormula(
+        orderSheet,
+        `D${orderTotalRow}`,
+        `SUM(D${orderDataStartRow}:D${orderDataEndRow})`,
+        'D15',
+        model.demandSalesQty
       )
-      dailySheet['!cols'] = [
-        ...fixedWidths,
-        ...dates.map(() => ({ ...dateWidth })),
-        ...summaryWidths,
-      ]
-      dailySheet['!merges'] = [
-        XLSX.utils.decode_range(
-          `A1:${XLSX.utils.encode_col(dailyLastCol)}1`
-        ),
-        XLSX.utils.decode_range(
-          `A2:${XLSX.utils.encode_col(dailyLastCol)}2`
-        ),
-      ]
-      dailySheet['!ref'] = `A1:${XLSX.utils.encode_col(
-        dailyLastCol
-      )}${dailyTotalRow}`
-
-      // ------------------------------------------------------------
-      // 3) Raw detail sheet: fixed columns, variable number of rows.
-      // ------------------------------------------------------------
-      const rawTemplateRange = XLSX.utils.decode_range(
-        rawSheet['!ref'] || 'A1:J2'
+      setCellFormula(
+        orderSheet,
+        `E${orderTotalRow}`,
+        `SUM(E${orderDataStartRow}:E${orderDataEndRow})`,
+        'E15',
+        1
       )
-      const rawDataStyleRow = Math.min(2, rawTemplateRange.e.r + 1)
-      clearSheetValues(rawSheet)
+      setCellFormula(
+        orderSheet,
+        `F${orderTotalRow}`,
+        `SUM(F${orderDataStartRow}:F${orderDataEndRow})`,
+        'F15',
+        model.currentStockQty
+      )
+      setCellFormula(
+        orderSheet,
+        `G${orderTotalRow}`,
+        `SUM(G${orderDataStartRow}:G${orderDataEndRow})`,
+        'G15'
+      )
+      setCellFormula(
+        orderSheet,
+        `H${orderTotalRow}`,
+        `SUM(H${orderDataStartRow}:H${orderDataEndRow})`,
+        'H15'
+      )
+      setCellFormula(
+        orderSheet,
+        `I${orderTotalRow}`,
+        `SUM(I${orderDataStartRow}:I${orderDataEndRow})`,
+        'I15',
+        model.recommendedReorderQty
+      )
+      setCellFormula(
+        orderSheet,
+        `L${orderTotalRow}`,
+        `SUM(L${orderDataStartRow}:L${orderDataEndRow})`,
+        'L15',
+        1
+      )
+      setCellFormula(
+        orderSheet,
+        `M${orderTotalRow}`,
+        `IFERROR(AVERAGE(M${orderDataStartRow}:M${orderDataEndRow}),0)`,
+        'M15'
+      )
 
-      const rawHeaders = [
-        '일자',
-        '원본SKU',
-        '환산SKU',
-        '모델명',
-        '색상코드',
-        '사이즈',
-        '유형',
-        '출고수량',
-        '클레임수량',
-        '순판매수량',
+      orderSheet['!cols'] = [
+        { wch: 18.75 },
+        { wch: 5.5 },
+        { wch: 5.5 },
+        { wch: 22.5 },
+        { wch: 15 },
+        { wch: 7.5 },
+        { wch: 11.625 },
+        { wch: 15 },
+        { wch: 9.5 },
+        { wch: 12.75 },
+        { wch: 7.5 },
+        { wch: 10.75 },
+        { wch: 10.25 },
       ]
-      rawHeaders.forEach((header, col) => {
-        setCellValue(
-          rawSheet,
-          XLSX.utils.encode_cell({ r: 0, c: col }),
-          header
-        )
-      })
-
-      dailyRows.forEach((row, index) => {
-        const excelRow = 2 + index
-        copyRowStyles(rawSheet, rawDataStyleRow, excelRow, 0, 9)
-        const values: (string | number)[] = [
-          row.date,
-          row.sourceSku,
-          row.convertedSku,
-          row.model,
-          row.colorCode,
-          row.size,
-          row.sourceType,
-          row.salesQty,
-          row.claimQty,
-          row.netSalesQty,
-        ]
-        values.forEach((value, col) => {
-          setCellValue(
-            rawSheet,
-            XLSX.utils.encode_cell({ r: excelRow - 1, c: col }),
-            value,
-            XLSX.utils.encode_cell({ r: rawDataStyleRow - 1, c: col })
-          )
-        })
-      })
-      rawSheet['!ref'] = `A1:J${Math.max(dailyRows.length + 1, 1)}`
+      orderSheet['!autofilter'] = {
+        ref: `A7:M${Math.max(orderDataEndRow, 7)}`,
+      }
+      orderSheet['!ref'] = `A1:M${orderTotalRow}`
 
       XLSX.writeFile(
         workbook,
         getSafeFileName(`발주서_${model.model}_초안_${getToday()}.xlsm`),
-        { bookType: 'xlsm', bookVBA: true, cellStyles: true }
+        {
+          bookType: 'xlsm',
+          bookVBA: true,
+          cellStyles: true,
+        }
       )
     } catch (error: any) {
       console.error(error)
