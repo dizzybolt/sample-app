@@ -72,7 +72,6 @@ type RocketSkuSummary = {
   stockDays: number | null
   targetStockQty: number
   reorderQty: number
-  imageUrl: string | null
 }
 
 type RocketModelSummary = {
@@ -124,29 +123,27 @@ export function RocketReorderManager() {
       }, '')
 
       const latestStock = latestDate
-        ? allStock.filter((row) => String(row.snapshot_date || '').slice(0, 10) === latestDate)
+        ? allStock.filter(
+            (row) => String(row.snapshot_date || '').slice(0, 10) === latestDate
+          )
         : []
 
-      const targets = Array.from(
-        new Set([
-          ...rocketSales.map((row) => normalizeSku(row.sku)),
-          ...latestStock.map((row) => normalizeSku(row.sku)),
-        ])
-      )
-        .filter(Boolean)
-        .map((sku) => ({ sku }))
+      const modelTargets = Array.from(
+        new Set(
+          rocketSales
+            .map((row) => getSkuParts(row.sku).model)
+            .map(normalizeModelName)
+            .filter(Boolean)
+        )
+      ).map((modelName) => ({ modelName }))
 
-      const imageMap = await fetchProductImageMap(supabase, targets)
+      const imageMap = await fetchProductImageMap(supabase, modelTargets, {
+        modelOnly: true,
+      })
       const nextImageUrls: Record<string, string> = {}
-      targets.forEach((target) => {
-        const sku = normalizeSku(target.sku)
-        const parts = getSkuParts(sku)
-        const url = resolveProductImage(imageMap, {
-          sku,
-          modelName: parts.model,
-          colorCode: parts.color,
-        })
-        if (url) nextImageUrls[sku] = url
+      modelTargets.forEach(({ modelName }) => {
+        const url = resolveProductImage(imageMap, { modelName })
+        if (url) nextImageUrls[modelName] = url
       })
 
       setSalesRows(rocketSales)
@@ -157,7 +154,9 @@ export function RocketReorderManager() {
       setCurrentPage(1)
     } catch (error) {
       console.error(error)
-      setErrorMessage(error instanceof Error ? error.message : '데이터를 불러오지 못했습니다.')
+      setErrorMessage(
+        error instanceof Error ? error.message : '데이터를 불러오지 못했습니다.'
+      )
     } finally {
       setLoading(false)
     }
@@ -189,12 +188,10 @@ export function RocketReorderManager() {
       stockMap.set(sku, (stockMap.get(sku) || 0) + Number(row.qty || 0))
     })
 
-    const skuSet = new Set([...salesMap.keys(), ...stockMap.keys()])
     const modelMap = new Map<string, RocketModelSummary>()
 
-    skuSet.forEach((sku) => {
+    salesMap.forEach((shippedQty, sku) => {
       const parts = getSkuParts(sku)
-      const shippedQty = salesMap.get(sku) || 0
       const stockQty = stockMap.get(sku) || 0
       const dailyAvg = shippedQty / analysisDays
       const targetStockQty = Math.ceil(dailyAvg * targetDays)
@@ -211,7 +208,6 @@ export function RocketReorderManager() {
         stockDays,
         targetStockQty,
         reorderQty,
-        imageUrl: imageUrls[sku] || null,
       }
 
       const model = normalizeModelName(parts.model) || parts.model
@@ -223,7 +219,7 @@ export function RocketReorderManager() {
         stockDays: null,
         targetStockQty: 0,
         reorderQty: 0,
-        imageUrl: null,
+        imageUrl: imageUrls[model] || null,
         skuRows: [],
       }
 
@@ -232,7 +228,6 @@ export function RocketReorderManager() {
       current.targetStockQty += targetStockQty
       current.reorderQty += reorderQty
       current.skuRows.push(skuRow)
-      current.imageUrl = current.imageUrl || imageUrls[sku] || null
       modelMap.set(model, current)
     })
 
@@ -243,10 +238,14 @@ export function RocketReorderManager() {
           ...row,
           dailyAvg,
           stockDays: dailyAvg > 0 ? row.stockQty / dailyAvg : null,
-          skuRows: row.skuRows.sort((a, b) => b.reorderQty - a.reorderQty || b.shippedQty - a.shippedQty),
+          skuRows: row.skuRows.sort(
+            (a, b) => b.reorderQty - a.reorderQty || b.shippedQty - a.shippedQty
+          ),
         }
       })
-      .sort((a, b) => b.reorderQty - a.reorderQty || b.shippedQty - a.shippedQty)
+      .sort(
+        (a, b) => b.reorderQty - a.reorderQty || b.shippedQty - a.shippedQty
+      )
   }, [analysisDays, imageUrls, salesRows, stockRows, targetDays])
 
   const filteredModels = useMemo(() => {
@@ -261,7 +260,10 @@ export function RocketReorderManager() {
     })
   }, [keyword, models, onlyReorder])
 
-  const totalPages = Math.max(1, Math.ceil(filteredModels.length / MODEL_PAGE_SIZE))
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredModels.length / MODEL_PAGE_SIZE)
+  )
   const pagedModels = useMemo(() => {
     const from = (currentPage - 1) * MODEL_PAGE_SIZE
     return filteredModels.slice(from, from + MODEL_PAGE_SIZE)
@@ -301,7 +303,8 @@ export function RocketReorderManager() {
         일평균출고: Number(sku.dailyAvg.toFixed(2)),
         최신재고기준일: latestStockDate,
         현재고: sku.stockQty,
-        재고일수: sku.stockDays == null ? '' : Number(sku.stockDays.toFixed(1)),
+        재고일수:
+          sku.stockDays == null ? '' : Number(sku.stockDays.toFixed(1)),
         목표재고일수: targetDays,
         목표재고: sku.targetStockQty,
         추천발주수량: sku.reorderQty,
@@ -311,7 +314,10 @@ export function RocketReorderManager() {
     const worksheet = XLSX.utils.json_to_sheet(rows)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, '쿠팡로켓 발주추천')
-    XLSX.writeFile(workbook, `쿠팡로켓_발주추천_${startDate}_${endDate}.xlsx`)
+    XLSX.writeFile(
+      workbook,
+      `쿠팡로켓_발주추천_${startDate}_${endDate}.xlsx`
+    )
   }
 
   return (
@@ -321,15 +327,29 @@ export function RocketReorderManager() {
           <div className="flex flex-wrap items-end gap-3">
             <label className="space-y-1 text-sm">
               <span className="text-gray-500">시작일</span>
-              <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
             </label>
             <label className="space-y-1 text-sm">
               <span className="text-gray-500">종료일</span>
-              <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+              />
             </label>
             <div className="flex flex-wrap gap-2">
               {[7, 14, 21, 30].map((days) => (
-                <Button key={days} type="button" variant="outline" size="sm" onClick={() => applyPreset(days)}>
+                <Button
+                  key={days}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => applyPreset(days)}
+                >
                   최근 {days}일
                 </Button>
               ))}
@@ -345,21 +365,32 @@ export function RocketReorderManager() {
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 {[7, 14, 21, 30].map((days) => (
-                  <option key={days} value={days}>{days}일</option>
+                  <option key={days} value={days}>
+                    {days}일
+                  </option>
                 ))}
               </select>
             </label>
-            <Button type="button" onClick={() => void loadData()} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <Button
+              type="button"
+              onClick={() => void loadData()}
+              disabled={loading}
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+              />
               조회
             </Button>
           </div>
         </div>
 
         <p className="mt-3 text-xs text-gray-500">
-          판매 기준: {ROCKET_SHOP} · 조회 {analysisDays}일 · 재고 기준: {latestStockDate || '-'}
+          판매 기준: {ROCKET_SHOP} · 조회 {analysisDays}일 · 재고 기준:{' '}
+          {latestStockDate || '-'}
         </p>
-        {errorMessage && <p className="mt-3 text-sm text-red-600">{errorMessage}</p>}
+        {errorMessage && (
+          <p className="mt-3 text-sm text-red-600">{errorMessage}</p>
+        )}
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -369,7 +400,10 @@ export function RocketReorderManager() {
           ['최신 현재고', `${formatNumber(totals.stock)}개`],
           ['추천 발주수량', `${formatNumber(totals.reorder)}개`],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div
+            key={label}
+            className="rounded-2xl border bg-white p-4 shadow-sm"
+          >
             <p className="text-sm text-gray-500">{label}</p>
             <p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
           </div>
@@ -404,7 +438,12 @@ export function RocketReorderManager() {
             </label>
           </div>
 
-          <Button type="button" variant="outline" onClick={exportExcel} disabled={filteredModels.length === 0}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={exportExcel}
+            disabled={filteredModels.length === 0}
+          >
             <Download className="mr-2 h-4 w-4" />
             Excel 다운로드
           </Button>
@@ -434,24 +473,58 @@ export function RocketReorderManager() {
                         <div className="flex items-center gap-3">
                           <div className="h-14 w-14 overflow-hidden rounded-lg border bg-gray-50">
                             {model.imageUrl ? (
-                              <img src={model.imageUrl} alt={model.model} className="h-full w-full object-cover" loading="lazy" />
+                              <img
+                                src={model.imageUrl}
+                                alt={model.model}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
                             ) : null}
                           </div>
                           <div>
-                            <p className="font-semibold text-gray-900">{model.model}</p>
-                            <p className="text-xs text-gray-500">SKU {model.skuRows.length}개</p>
+                            <p className="font-semibold text-gray-900">
+                              {model.model}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              SKU {model.skuRows.length}개
+                            </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right">{formatNumber(model.shippedQty)}</td>
-                      <td className="px-3 py-3 text-right">{model.dailyAvg.toFixed(1)}</td>
-                      <td className="px-3 py-3 text-right">{formatNumber(model.stockQty)}</td>
-                      <td className="px-3 py-3 text-right">{model.stockDays == null ? '-' : `${model.stockDays.toFixed(1)}일`}</td>
-                      <td className="px-3 py-3 text-right">{formatNumber(model.targetStockQty)}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-red-600">{formatNumber(model.reorderQty)}</td>
+                      <td className="px-3 py-3 text-right">
+                        {formatNumber(model.shippedQty)}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {model.dailyAvg.toFixed(1)}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {formatNumber(model.stockQty)}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {model.stockDays == null
+                          ? '-'
+                          : `${model.stockDays.toFixed(1)}일`}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {formatNumber(model.targetStockQty)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold text-red-600">
+                        {formatNumber(model.reorderQty)}
+                      </td>
                       <td className="px-3 py-3 text-center">
-                        <Button type="button" variant="ghost" size="icon" onClick={() => setExpandedModel(isOpen ? '' : model.model)}>
-                          {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            setExpandedModel(isOpen ? '' : model.model)
+                          }
+                        >
+                          {isOpen ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
                         </Button>
                       </td>
                     </tr>
@@ -476,15 +549,31 @@ export function RocketReorderManager() {
                               <tbody>
                                 {model.skuRows.map((sku) => (
                                   <tr key={sku.sku} className="border-t">
-                                    <td className="px-3 py-2 font-medium text-gray-900">{sku.sku}</td>
+                                    <td className="px-3 py-2 font-medium text-gray-900">
+                                      {sku.sku}
+                                    </td>
                                     <td className="px-3 py-2">{sku.color}</td>
                                     <td className="px-3 py-2">{sku.size}</td>
-                                    <td className="px-3 py-2 text-right">{formatNumber(sku.shippedQty)}</td>
-                                    <td className="px-3 py-2 text-right">{sku.dailyAvg.toFixed(2)}</td>
-                                    <td className="px-3 py-2 text-right">{formatNumber(sku.stockQty)}</td>
-                                    <td className="px-3 py-2 text-right">{sku.stockDays == null ? '-' : `${sku.stockDays.toFixed(1)}일`}</td>
-                                    <td className="px-3 py-2 text-right">{formatNumber(sku.targetStockQty)}</td>
-                                    <td className="px-3 py-2 text-right font-semibold text-red-600">{formatNumber(sku.reorderQty)}</td>
+                                    <td className="px-3 py-2 text-right">
+                                      {formatNumber(sku.shippedQty)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {sku.dailyAvg.toFixed(2)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {formatNumber(sku.stockQty)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {sku.stockDays == null
+                                        ? '-'
+                                        : `${sku.stockDays.toFixed(1)}일`}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {formatNumber(sku.targetStockQty)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-semibold text-red-600">
+                                      {formatNumber(sku.reorderQty)}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -497,15 +586,29 @@ export function RocketReorderManager() {
                 )
               })}
               {!loading && pagedModels.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-500">조건에 맞는 데이터가 없습니다.</td></tr>
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-4 py-12 text-center text-gray-500"
+                  >
+                    조건에 맞는 데이터가 없습니다.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
 
         <div className="flex items-center justify-between border-t p-4">
-          <p className="text-sm text-gray-500">{filteredModels.length.toLocaleString('ko-KR')}개 모델</p>
-          <ListPagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} disabled={loading} />
+          <p className="text-sm text-gray-500">
+            {filteredModels.length.toLocaleString('ko-KR')}개 모델
+          </p>
+          <ListPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            disabled={loading}
+          />
         </div>
       </section>
     </div>
