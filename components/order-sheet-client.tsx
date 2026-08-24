@@ -213,94 +213,6 @@ export function OrderSheetClient({
   }
 
   const exportOrderExcelWithImages = async () => {
-    const rows = samples.flatMap((sample) =>
-      sizeLabels.map((size) => ({
-        이미지URL: getOriginalImageUrl(sample.image_url),
-        썸네일: '',
-        중국품번: sample.china_code || '',
-        한국품번: sample.korea_code || '',
-        색상코드: sample.color_code || '',
-        색상명: sample.color_name || '',
-        사이즈: size,
-        발주수량: getQty(sample.id, size),
-        구분: '발주',
-        비고: sample.note || sample.memo || '',
-      }))
-    )
-
-    const extraRowsForExcel = extraRows
-      .filter((row) => hasExtraRowValue(row, sizeLabels, getExtraTotal))
-      .flatMap((row) =>
-        sizeLabels.map((size) => ({
-          이미지URL: getOriginalImageUrl(row.image_url),
-          썸네일: '',
-          중국품번: chinaCode,
-          한국품번: row.korea_code || '',
-          색상코드: row.color_code || '',
-          색상명: row.color_name || '',
-          사이즈: size,
-          발주수량: Number(row.size_quantities?.[size] || 0),
-          구분: '추가행',
-          비고: row.memo || '',
-        }))
-      )
-
-    const requestRows: Record<string, string | number>[] = []
-
-    if (requestMemo.trim() || requestImageUrl) {
-      requestRows.push({
-        이미지URL: getOriginalImageUrl(requestImageUrl),
-        썸네일: '',
-        중국품번: chinaCode,
-        한국품번: '',
-        색상코드: '',
-        색상명: '',
-        사이즈: '',
-        발주수량: '',
-        구분: '발주요청',
-        비고: requestMemo.trim(),
-      })
-    }
-
-    ;[...orderRequestItems]
-      .sort(
-        (a, b) =>
-          Number(a.sort_order || 0) - Number(b.sort_order || 0)
-      )
-      .forEach((item, index) => {
-        const memo = String(item.request_memo || '').trim()
-        const imageUrl =
-          item.previewUrl ||
-          item.request_image_url ||
-          ''
-
-        if (!memo && !imageUrl) return
-
-        requestRows.push({
-          이미지URL: getOriginalImageUrl(imageUrl),
-          썸네일: '',
-          중국품번: chinaCode,
-          한국품번: '',
-          색상코드: '',
-          색상명: '',
-          사이즈: '',
-          발주수량: '',
-          구분: '발주요청',
-          비고: memo || `발주 요청사항 ${index + 1}`,
-        })
-      })
-
-    const exportRows = [
-      ...rows,
-      ...extraRowsForExcel,
-      ...requestRows,
-    ]
-
-    if (exportRows.length === 0) {
-      alert('다운로드할 발주 데이터가 없습니다.')
-      return
-    }
-
     const templateRes = await fetch('/excel/order-sheet-template.xlsm')
 
     if (!templateRes.ok) {
@@ -318,25 +230,163 @@ export function OrderSheetClient({
 
     const oldWorksheetName = workbook.SheetNames[0]
     const newWorksheetName = getSafeExcelSheetName(chinaCode)
-    const worksheet = XLSX.utils.json_to_sheet(exportRows)
+    const worksheet = workbook.Sheets[oldWorksheetName]
+
+    if (!worksheet) {
+      alert('발주서 엑셀 템플릿의 첫 번째 시트를 찾지 못했습니다.')
+      return
+    }
+
+    const existingMerges = (worksheet['!merges'] || []) as any[]
+    worksheet['!merges'] = existingMerges.filter(
+      (merge) => Number(merge?.s?.r ?? 0) < 4
+    )
+
+    for (let rowNo = 5; rowNo <= 500; rowNo += 1) {
+      for (let colNo = 0; colNo <= 12; colNo += 1) {
+        const address = XLSX.utils.encode_cell({ r: rowNo - 1, c: colNo })
+        if (worksheet[address]) {
+          delete worksheet[address].v
+          delete worksheet[address].w
+          delete worksheet[address].f
+          delete worksheet[address].t
+        }
+      }
+    }
+
+    const bodyRows: (string | number)[][] = []
+
+    samples.forEach((sample) => {
+      sizeLabels.forEach((size, sizeIndex) => {
+        bodyRows.push([
+          sizeIndex === 0 ? getOriginalImageUrl(sample.image_url) : '',
+          '',
+          sample.china_code || chinaCode || '',
+          sample.korea_code || '',
+          '',
+          sample.color_name || '',
+          sample.color_code || '',
+          size,
+          getQty(sample.id, size),
+          sample.note || sample.memo || '',
+          'ORDER',
+          '',
+          `SAMPLE:${sample.id}`,
+        ])
+      })
+    })
+
+    extraRows
+      .filter(
+        (row) =>
+          row.korea_code ||
+          row.color_code ||
+          row.color_name ||
+          row.memo ||
+          row.image_url ||
+          sizeLabels.some(
+            (size) => Number(row.size_quantities?.[size] || 0) !== 0
+          )
+      )
+      .forEach((row) => {
+        sizeLabels.forEach((size, sizeIndex) => {
+          bodyRows.push([
+            sizeIndex === 0 ? getOriginalImageUrl(row.image_url) : '',
+            '',
+            chinaCode,
+            row.korea_code || '',
+            '',
+            row.color_name || '',
+            row.color_code || '',
+            size,
+            Number(row.size_quantities?.[size] || 0),
+            row.memo || '',
+            'EXTRA',
+            '',
+            `EXTRA:${row.id}`,
+          ])
+        })
+      })
+
+    const requestRows: (string | number)[][] = []
+
+    const normalizedRequestItems = [
+      ...(requestMemo.trim() || requestImageUrl
+        ? [{
+            id: 'ORDER_REQUEST_MAIN',
+            sort_order: -1,
+            request_memo: requestMemo.trim(),
+            request_image_url: requestImageUrl,
+            previewUrl: requestImageUrl,
+          }]
+        : []),
+      ...orderRequestItems,
+    ]
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+      .filter((item) => {
+        const memo = String(item.request_memo || '').trim()
+        const imageUrl = (item as any).previewUrl || item.request_image_url || ''
+        return Boolean(memo || imageUrl)
+      })
+
+    if (normalizedRequestItems.length > 0) {
+      requestRows.push([
+        '', '', '발주 요청사항', '', '', '', '', '', '', '',
+        'REQUEST_HEADER', '', 'REQUEST_HEADER',
+      ])
+
+      normalizedRequestItems.forEach((item, index) => {
+        const imageUrl = (item as any).previewUrl || item.request_image_url || ''
+
+        requestRows.push([
+          getOriginalImageUrl(imageUrl),
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          String(item.request_memo || '').trim(),
+          'REQUEST',
+          '',
+          `REQUEST:${item.id || index}`,
+        ])
+      })
+    }
+
+    const allRows = [...bodyRows, ...requestRows]
+
+    if (allRows.length === 0) {
+      alert('다운로드할 발주 데이터가 없습니다.')
+      return
+    }
+
+    XLSX.utils.sheet_add_aoa(worksheet, allRows, { origin: 'A5' })
+
+    worksheet['K1'] = { t: 's', v: '__ROW_TYPE' }
+    worksheet['L1'] = { t: 's', v: '__REPRESENTATIVE_IMAGE_URL' }
+    worksheet['L2'] = { t: 's', v: getOriginalImageUrl(representative?.image_url) }
+    worksheet['M1'] = { t: 's', v: '__GROUP_KEY' }
 
     worksheet['!cols'] = [
-      { wch: 42 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 40 },
+      { wch: 23.125, hidden: false },
+      { wch: 18.625 },
+      { wch: 15.5 },
+      { wch: 13 },
+      { wch: 9.75 },
+      { wch: 13 },
+      { wch: 6.875 },
+      { wch: 7.625 },
+      { wch: 9.75 },
+      { wch: 24.625 },
+      { wch: 14, hidden: true },
+      { wch: 14, hidden: true },
+      { wch: 14, hidden: true },
     ]
 
-    worksheet['!rows'] = [
-      { hpt: 24 },
-      ...exportRows.map(() => ({ hpt: 100 })),
-    ]
+    worksheet['!ref'] = `A1:M${Math.max(5, 4 + allRows.length)}`
 
     delete workbook.Sheets[oldWorksheetName]
     workbook.Sheets[newWorksheetName] = worksheet
@@ -350,13 +400,9 @@ export function OrderSheetClient({
     XLSX.writeFile(
       workbook,
       `발주서_${date}_${chinaCode}.xlsm`,
-      {
-        bookType: 'xlsm',
-        bookVBA: true,
-      }
+      { bookType: 'xlsm', bookVBA: true }
     )
   }
-
 
   const getQty = (sampleId: string, sizeLabel: string) => {
     const found = quantities.find(
