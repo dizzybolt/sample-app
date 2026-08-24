@@ -321,7 +321,7 @@ export function OrderSheetClient({
     const worksheet = XLSX.utils.json_to_sheet(exportRows)
 
     worksheet['!cols'] = [
-      { wch: 42, hidden: true },
+      { wch: 42 },
       { wch: 18 },
       { wch: 18 },
       { wch: 18 },
