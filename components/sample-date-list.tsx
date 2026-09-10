@@ -1,7 +1,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Download, Pencil, Plus, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ColorCode, SampleEntry, SampleStatus } from '@/lib/types'
@@ -28,6 +29,9 @@ import * as XLSX from 'xlsx'
 interface SampleDateListProps {
   initialSamples: SampleEntry[]
   colorCodes: ColorCode[]
+  selectedYear: number
+  selectedMonth: number
+  availableYears: number[]
 }
 
 const STATUS_OPTIONS: SampleStatus[] = [
@@ -134,13 +138,25 @@ async function exportSamplesByDateAsXlsm(
 export function SampleDateList({
   initialSamples,
   colorCodes,
+  selectedYear,
+  selectedMonth,
+  availableYears,
 }: SampleDateListProps) {
+  const router = useRouter()
+  const [isPeriodPending, startPeriodTransition] = useTransition()
   const [samples, setSamples] = useState(initialSamples)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingSample, setEditingSample] = useState<SampleEntry | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
+
+
+  const handlePeriodChange = (nextYear: number, nextMonth: number) => {
+    startPeriodTransition(() => {
+      router.push(`/samples?year=${nextYear}&month=${nextMonth}`)
+    })
+  }
 
   const filteredSamples = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase()
@@ -252,13 +268,56 @@ export function SampleDateList({
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
+            <div className="flex shrink-0 gap-2">
+              <Select
+                value={String(selectedYear)}
+                disabled={isPeriodPending}
+                onValueChange={(value) =>
+                  handlePeriodChange(Number(value), selectedMonth)
+                }
+              >
+                <SelectTrigger className="w-[110px]">
+                  <SelectValue placeholder="연도" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableYears.map((year) => (
+                    <SelectItem key={year} value={String(year)}>
+                      {year}년
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={String(selectedMonth)}
+                disabled={isPeriodPending}
+                onValueChange={(value) =>
+                  handlePeriodChange(selectedYear, Number(value))
+                }
+              >
+                <SelectTrigger className="w-[92px]">
+                  <SelectValue placeholder="월" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map(
+                    (month) => (
+                      <SelectItem key={month} value={String(month)}>
+                        {month}월
+                      </SelectItem>
+                    )
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="relative min-w-0 flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="중국품번, 한국품번, 색상 검색"
                 className="pl-9"
+                disabled={isPeriodPending}
               />
             </div>
 
@@ -289,7 +348,7 @@ export function SampleDateList({
           <section className="rounded-2xl bg-white p-10 text-center shadow-sm">
             <p className="font-medium text-gray-900">샘플이 없습니다.</p>
             <p className="mt-1 text-sm text-gray-500">
-              검색 조건을 변경하거나 새 샘플을 등록해 주세요.
+              {selectedYear}년 {selectedMonth}월의 검색 조건을 변경하거나 새 샘플을 등록해 주세요.
             </p>
           </section>
         ) : (
